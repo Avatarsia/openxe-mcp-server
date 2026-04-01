@@ -1,506 +1,252 @@
-# OpenXE MCP Server -- Installationsanleitung (Deutsch)
+# OpenXE MCP Server
 
-> Verbinde dein OpenXE ERP-System mit Claude (KI-Assistent), sodass du per Chat Kunden anlegen, Auftraege erstellen, Rechnungen schreiben und Lagerbestaende pruefen kannst.
+Verbinde dein [OpenXE ERP](https://openxe.de/) mit deinem KI-Assistenten -- per [MCP (Model Context Protocol)](https://modelcontextprotocol.io/).
 
----
-
-## Inhaltsverzeichnis
-
-1. [Was ist das?](#was-ist-das)
-2. [Voraussetzungen](#voraussetzungen)
-3. [API-Benutzer in OpenXE anlegen](#api-benutzer-in-openxe-anlegen)
-4. [Installation](#installation)
-5. [Konfiguration](#konfiguration)
-6. [Einrichtung in Claude Desktop](#einrichtung-in-claude-desktop)
-7. [Einrichtung in Claude Code](#einrichtung-in-claude-code)
-8. [Verwendung mit lokalen LLMs](#verwendung-mit-lokalen-llms)
-9. [Erste Schritte](#erste-schritte)
-10. [Verfuegbare Funktionen](#verfuegbare-funktionen)
-11. [Haeufige Probleme](#haeufige-probleme)
-12. [Wichtige Hinweise](#wichtige-hinweise)
-
----
+> **30+ Tools** zum Erstellen und Bearbeiten von ERP-Daten | **19 Resources** zum Lesen von Artikeln, Auftraegen, Rechnungen, Lagerbestaenden u.v.m. | **Verifiziert** gegen eine live OpenXE v1.12 Instanz
 
 ## Was ist das?
 
-Dieses Programm ist eine **Bruecke** zwischen deinem OpenXE ERP-System (Warenwirtschaft) und Claude, dem KI-Assistenten von Anthropic.
+Dieser MCP-Server macht dein OpenXE ERP fuer jeden MCP-faehigen KI-Assistenten zugaenglich -- ob Claude, ChatGPT, Ollama, LM Studio oder andere. Dein KI-Assistent versteht deine Anfrage, waehlt automatisch die passenden Tools und fuehrt sie gegen deine OpenXE-Instanz aus.
 
-**Was bedeutet das konkret?** Du kannst Claude in natuerlicher Sprache bitten, Dinge in deinem ERP zu tun -- zum Beispiel:
+## Schnellstart (ein Befehl)
 
-- "Zeig mir alle offenen Auftraege von Kunde Mueller"
-- "Leg einen neuen Kunden an: Max Mustermann, Musterstrasse 1, 12345 Berlin"
-- "Erstell eine Rechnung fuer Auftrag 10042"
-- "Wie viel Filament haben wir noch auf Lager?"
-
-Claude versteht deine Anfrage, greift ueber diesen MCP-Server auf OpenXE zu und fuehrt die Aktion aus -- oder zeigt dir die gewuenschten Daten an.
-
-**MCP** steht fuer "Model Context Protocol". Das ist ein Standard, ueber den KI-Assistenten wie Claude auf externe Systeme zugreifen koennen. Du musst die technischen Details nicht verstehen -- folge einfach dieser Anleitung.
-
----
-
-## Voraussetzungen
-
-Bevor du loslegst, brauchst du drei Dinge:
-
-### 1. Node.js (Version 20 oder neuer)
-
-**Was ist Node.js?** Eine Laufzeitumgebung, die JavaScript-Programme ausfuehren kann. Unser MCP-Server ist in JavaScript/TypeScript geschrieben und braucht Node.js zum Laufen.
-
-**So pruefst du, ob Node.js installiert ist:**
-
+Fuer **Claude Code**:
 ```bash
-node --version
+claude mcp add -s user \
+  -e OPENXE_URL=http://dein-openxe-server \
+  -e OPENXE_USERNAME=dein-api-user \
+  -e OPENXE_PASSWORD=dein-api-passwort \
+  openxe -- npx -y github:Avatarsia/openxe-mcp-server
 ```
 
-Wenn eine Versionsnummer wie `v20.x.x` oder hoeher erscheint, bist du startklar. Falls nicht, lade Node.js von [nodejs.org](https://nodejs.org/) herunter und installiere die LTS-Version (= Langzeitversion, empfohlen).
-
-### 2. OpenXE ERP-System
-
-Du brauchst ein laufendes OpenXE (mindestens Version 1.12) mit Netzwerkzugang. Du musst die **URL** deiner OpenXE-Installation kennen, z.B. `http://192.168.0.143` oder `https://erp.deinefirma.de`.
-
-### 3. Claude Desktop oder Claude Code
-
-- **Claude Desktop**: Die Desktop-App von Anthropic. Download unter [claude.ai/download](https://claude.ai/download). Du brauchst ein Claude Pro- oder Team-Abo.
-- **Claude Code**: Die Kommandozeilen-Version von Claude fuer Entwickler. Installation: `npm install -g @anthropic-ai/claude-code`
-
-Du brauchst mindestens eines von beiden.
-
----
-
-## API-Benutzer in OpenXE anlegen
-
-Damit Claude auf dein ERP zugreifen kann, brauchst du einen speziellen API-Benutzer in OpenXE. Dieser Benutzer ist **kein normaler Login** -- er wird nur fuer die Programm-Schnittstelle (API) verwendet.
-
-### Schritt fuer Schritt:
-
-1. **Melde dich in OpenXE an** als Administrator
-2. **Navigiere zu:** Administration > Einstellungen > API-Accounts
-3. **Klicke auf "Neuer API-Account"**
-4. **Fuelle die Felder aus:**
-   - **Remotedomain** (= Benutzername): Waehle einen Namen, z.B. `claude_api`
-   - **Initkey** (= Passwort): Vergib ein sicheres Passwort, z.B. `MeinSicheresPasswort123!`
-   - **Aktiv**: Ja / Haekchen setzen
-5. **Berechtigungen setzen**: Unter `permissions` muessen die gewuenschten Rechte als JSON-Array stehen. Fuer vollen Zugriff:
-   ```json
-   ["*"]
-   ```
-   Oder fuer eingeschraenkten Zugriff eine Liste wie:
-   ```json
-   ["list_addresses", "create_order", "view_article", "list_orders"]
-   ```
-6. **Speichern**
-
-> **Tipp:** Notiere dir Remotedomain und Initkey -- du brauchst beides gleich bei der Konfiguration.
-
----
-
-## Installation
-
-### Schritt 1: Quellcode herunterladen
-
-**Was passiert hier?** Du laedst den Programmcode von GitHub (einer Plattform fuer Softwareprojekte) auf deinen Computer herunter.
-
-Oeffne ein Terminal (Windows: PowerShell oder Git Bash, Mac: Terminal, Linux: Terminal) und fuehre aus:
-
-```bash
-git clone https://github.com/3DPartner/openxe-mcp-server.git
-```
-
-> **`git clone`** = Lade eine Kopie des Projekts von GitHub herunter. Falls du `git` nicht installiert hast, kannst du es von [git-scm.com](https://git-scm.com/) herunterladen. Alternativ kannst du das Projekt auch als ZIP von GitHub herunterladen und entpacken.
-
-### Schritt 2: In das Projektverzeichnis wechseln
-
-```bash
-cd openxe-mcp-server
-```
-
-> **`cd`** = "change directory" = Wechsle in den angegebenen Ordner.
-
-### Schritt 3: Abhaengigkeiten installieren
-
-```bash
-npm install
-```
-
-> **`npm install`** = Lade alle Programmbibliotheken herunter, die der MCP-Server zum Funktionieren braucht. `npm` ist der Paketmanager von Node.js und wird automatisch mit Node.js installiert. Dieser Schritt kann 1-2 Minuten dauern.
-
-### Schritt 4: Programm kompilieren
-
-```bash
-npm run build
-```
-
-> **`npm run build`** = Wandle den TypeScript-Quellcode in ausfuehrbares JavaScript um. TypeScript ist eine Programmiersprache, die erst "uebersetzt" werden muss.
-
-### Schritt 5: Pruefen ob alles funktioniert (optional)
-
-```bash
-npm test
-```
-
-> **`npm test`** = Fuehre die eingebauten Tests aus. Wenn alles gruen ist bzw. "passed" steht, ist die Installation erfolgreich. Falls Tests fehlschlagen, die sich auf eine Netzwerkverbindung beziehen, ist das normal -- die brauchen eine laufende OpenXE-Instanz.
-
----
-
-## Konfiguration
-
-Der MCP-Server braucht 4 Informationen, um sich mit deinem OpenXE zu verbinden. Diese werden als **Umgebungsvariablen** (= Einstellungen, die Programme aus der Systemumgebung lesen) uebergeben:
-
-| Variable | Pflicht? | Beschreibung | Beispiel |
-|---|---|---|---|
-| `OPENXE_URL` | Ja | Die Web-Adresse deines OpenXE | `http://192.168.0.143` |
-| `OPENXE_USERNAME` | Ja | Der API-Benutzername (Remotedomain) | `claude_api` |
-| `OPENXE_PASSWORD` | Ja | Das API-Passwort (Initkey) | `MeinSicheresPasswort123!` |
-| `OPENXE_API_PATH` | Nein | API-Pfad (nur aendern falls noetig) | `/api/index.php` (Standard) |
-
-> **Wichtig:** Ersetze die Beispielwerte durch deine echten Daten!
-
----
-
-## Einrichtung in Claude Desktop
-
-### Schritt 1: Konfigurationsdatei finden
-
-Die Konfigurationsdatei von Claude Desktop liegt hier:
-
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-  - Das ist meistens: `C:\Users\DEIN_NAME\AppData\Roaming\Claude\claude_desktop_config.json`
-- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Linux:** `~/.config/Claude/claude_desktop_config.json`
-
-Falls die Datei noch nicht existiert, erstelle sie einfach.
-
-### Schritt 2: Konfiguration eintragen
-
-Oeffne die Datei mit einem Texteditor (z.B. Notepad, VS Code) und trage folgendes ein. **Ersetze die Pfade und Zugangsdaten durch deine eigenen!**
-
+Fuer **Claude Desktop** (in die Config-Datei einfuegen):
 ```json
 {
   "mcpServers": {
     "openxe": {
       "command": "npx",
-      "args": ["tsx", "C:/Pfad/zu/openxe-mcp-server/src/index.ts"],
+      "args": ["-y", "github:Avatarsia/openxe-mcp-server"],
       "env": {
-        "OPENXE_URL": "http://192.168.0.143",
-        "OPENXE_USERNAME": "claude_api",
-        "OPENXE_PASSWORD": "MeinSicheresPasswort123!"
+        "OPENXE_URL": "http://dein-openxe-server",
+        "OPENXE_USERNAME": "dein-api-user",
+        "OPENXE_PASSWORD": "dein-api-passwort"
       }
     }
   }
 }
 ```
 
-**Was bedeuten die einzelnen Zeilen?**
+Fuer **andere MCP-Clients** (OpenWebUI, LM Studio, etc.):
+```bash
+npx -y github:Avatarsia/openxe-mcp-server
+```
+Mit Umgebungsvariablen `OPENXE_URL`, `OPENXE_USERNAME`, `OPENXE_PASSWORD`.
 
-- `"command": "npx"` -- Das Programm, das den Server startet (npx ist ein Node.js-Werkzeug)
-- `"args": ["tsx", "...index.ts"]` -- Die Datei, die ausgefuehrt werden soll. **Aendere den Pfad** auf den Ort, wo du das Projekt gespeichert hast!
-- `"env"` -- Die Umgebungsvariablen mit deinen OpenXE-Zugangsdaten
+## Voraussetzungen
 
-> **Tipp fuer Windows:** Verwende in JSON-Dateien Schraegstriche `/` statt Backslashes `\` in Pfaden, also z.B. `C:/Users/Max/openxe-mcp-server/src/index.ts`
+- Node.js >= 20
+- Eine OpenXE-Instanz mit aktiviertem API-Zugang
 
-### Schritt 3: Claude Desktop neu starten
+## API-Benutzer in OpenXE anlegen
 
-Schliesse Claude Desktop komplett (auch aus dem System-Tray) und starte es neu. Der MCP-Server wird beim Start automatisch geladen.
+Bevor du loslegst, brauchst du einen API-Benutzer in OpenXE:
 
-### Schritt 4: Pruefen ob es funktioniert
+1. Melde dich als Admin in OpenXE an
+2. Gehe zu **Administration > Einstellungen > Benutzer**
+3. Erstelle einen neuen Benutzer (oder verwende einen bestehenden)
+4. Setze unter **API > REST-API** ein Passwort
+5. Merke dir Benutzername und Passwort -- die brauchst du fuer die Konfiguration
 
-In Claude Desktop solltest du jetzt ein Werkzeug-Symbol (Hammer-Icon) sehen. Klicke darauf -- dort sollten die OpenXE-Tools aufgelistet sein. Schreibe als Test:
+## Einrichtung
 
-> "Zeig mir die ersten 5 Adressen aus OpenXE"
-
-Wenn Daten erscheinen, funktioniert alles!
-
----
-
-## Einrichtung in Claude Code
-
-### Schritt 1: MCP-Server hinzufuegen
-
-Oeffne ein Terminal und fuehre aus:
+### Claude Code
 
 ```bash
-claude mcp add openxe -- npx tsx /Pfad/zu/openxe-mcp-server/src/index.ts
+claude mcp add -s user \
+  -e OPENXE_URL=http://dein-openxe-server \
+  -e OPENXE_USERNAME=dein-api-user \
+  -e OPENXE_PASSWORD=dein-api-passwort \
+  openxe -- npx -y github:Avatarsia/openxe-mcp-server
 ```
 
-> Ersetze `/Pfad/zu/` durch den tatsaechlichen Pfad, z.B. `C:/Users/Max/openxe-mcp-server/src/index.ts`
+### Claude Desktop
 
-### Schritt 2: Umgebungsvariablen setzen
+Fuege folgendes in deine Claude Desktop Config ein (meist unter `~/.config/claude/claude_desktop_config.json` bzw. `%APPDATA%\Claude\claude_desktop_config.json`):
 
-Bevor du Claude Code startest, musst du die Zugangsdaten in deinem Terminal setzen:
-
-**Linux/macOS:**
-```bash
-export OPENXE_URL="http://192.168.0.143"
-export OPENXE_USERNAME="claude_api"
-export OPENXE_PASSWORD="MeinSicheresPasswort123!"
-```
-
-**Windows (PowerShell):**
-```powershell
-$env:OPENXE_URL = "http://192.168.0.143"
-$env:OPENXE_USERNAME = "claude_api"
-$env:OPENXE_PASSWORD = "MeinSicheresPasswort123!"
-```
-
-**Windows (Git Bash / CMD):**
-```bash
-set OPENXE_URL=http://192.168.0.143
-set OPENXE_USERNAME=claude_api
-set OPENXE_PASSWORD=MeinSicheresPasswort123!
-```
-
-> **Tipp:** Trage diese Zeilen in deine Shell-Konfiguration ein (z.B. `~/.bashrc` oder `~/.zshrc`), damit sie bei jedem Terminalstart automatisch gesetzt werden.
-
-### Schritt 3: Claude Code starten
-
-```bash
-claude
-```
-
-Jetzt kannst du direkt loslegen und mit OpenXE arbeiten!
-
----
-
-## Verwendung mit lokalen LLMs
-
-Der MCP-Server ist nicht auf Claude beschraenkt. Du kannst ihn auch mit lokalen KI-Modellen verwenden, die auf deinem eigenen Computer laufen.
-
-### Option 1: OpenWebUI + Ollama
-
-[OpenWebUI](https://github.com/open-webui/open-webui) hat experimentelle MCP-Unterstuetzung und laeuft mit [Ollama](https://ollama.com/) als Backend (z.B. Llama, Mistral, Qwen).
-
-1. Installiere Ollama und lade ein Modell: `ollama pull llama3`
-2. Installiere OpenWebUI
-3. Konfiguriere den MCP-Server als stdio-Tool in OpenWebUI
-
-### Option 2: LM Studio + MCP Bridge
-
-[LM Studio](https://lmstudio.ai/) fuer das lokale Modell, kombiniert mit einem MCP-Client-Wrapper der die Tools als Function Calls weiterreicht.
-
-### Option 3: Den API-Client direkt als Library nutzen
-
-Der pragmatischste Weg: Du brauchst MCP gar nicht, wenn dein LLM Function Calling unterstuetzt. Nutze den `OpenXEClient` direkt:
-
-```typescript
-import { OpenXEClient } from "./src/client/openxe-client.js";
-
-const client = new OpenXEClient({
-  baseUrl: "http://dein-openxe/api/index.php",
-  username: "api-user",
-  password: "api-pass",
-  timeout: 30000
-});
-
-// Kunden abrufen
-const kunden = await client.get("/v1/adressen");
-
-// Artikel mit Preisen
-const artikel = await client.get("/v1/artikel", { include: "verkaufspreise" });
-
-// Auftrag erstellen
-const auftrag = await client.legacyPost("AuftragCreate", {
-  kundennummer: "10001",
-  artikelliste: {
-    position: [
-      { nummer: "700001", menge: "100", preis: "0.16" }
-    ]
+```json
+{
+  "mcpServers": {
+    "openxe": {
+      "command": "npx",
+      "args": ["-y", "github:Avatarsia/openxe-mcp-server"],
+      "env": {
+        "OPENXE_URL": "http://dein-openxe-server",
+        "OPENXE_USERNAME": "dein-api-user",
+        "OPENXE_PASSWORD": "dein-api-passwort"
+      }
+    }
   }
-});
+}
 ```
 
-Die Tool-Definitionen aus `src/tools/*.ts` kannst du in das Function-Calling-Format deines Modells uebersetzen (OpenAI-Format, Llama-Format, etc.).
+### OpenWebUI + Ollama
 
-### Hinweis
+OpenWebUI unterstuetzt MCP-Server ab Version 0.6+. Trage den Server unter **Admin > Tools > MCP Servers** ein:
 
-MCP ist aktuell primaer im Claude-Oekosystem verbreitet. Die Unterstuetzung durch andere LLMs waechst aber stetig. Der `OpenXEClient` funktioniert unabhaengig von MCP als reine TypeScript-Bibliothek und kann mit jedem System genutzt werden.
+- **Command:** `npx`
+- **Args:** `-y github:Avatarsia/openxe-mcp-server`
+- **Umgebungsvariablen:** `OPENXE_URL`, `OPENXE_USERNAME`, `OPENXE_PASSWORD`
 
----
+### LM Studio
+
+LM Studio unterstuetzt MCP ab Version 0.3+. Konfiguration unter **Settings > MCP**:
+
+```json
+{
+  "openxe": {
+    "command": "npx",
+    "args": ["-y", "github:Avatarsia/openxe-mcp-server"],
+    "env": {
+      "OPENXE_URL": "http://dein-openxe-server",
+      "OPENXE_USERNAME": "dein-api-user",
+      "OPENXE_PASSWORD": "dein-api-passwort"
+    }
+  }
+}
+```
+
+### Andere MCP-Clients
+
+Jeder MCP-Client, der stdio-Transport unterstuetzt, kann diesen Server nutzen. Starte ihn mit:
+
+```bash
+OPENXE_URL=http://dein-openxe-server \
+OPENXE_USERNAME=dein-api-user \
+OPENXE_PASSWORD=dein-api-passwort \
+npx -y github:Avatarsia/openxe-mcp-server
+```
+
+### Direkte Nutzung als TypeScript-Library
+
+Falls du den Server lokal klonen und anpassen moechtest:
+
+```bash
+git clone https://github.com/Avatarsia/openxe-mcp-server.git
+cd openxe-mcp-server
+npm install
+npm run build
+npm start
+```
+
+## Konfiguration
+
+Der Server liest seine Konfiguration aus Umgebungsvariablen:
+
+| Variable | Pflicht | Default | Beschreibung |
+|---|---|---|---|
+| `OPENXE_URL` | Ja | - | Basis-URL der OpenXE-Instanz (z.B. `http://192.168.0.143`) |
+| `OPENXE_USERNAME` | Ja | - | API-Benutzername |
+| `OPENXE_PASSWORD` | Ja | - | API-Passwort |
+| `OPENXE_API_PATH` | Nein | `/api/index.php` | API-Endpunkt-Pfad |
+| `OPENXE_TIMEOUT` | Nein | `30000` | Request-Timeout in ms |
+
 ## Erste Schritte
 
-Hier sind ein paar Beispiel-Anfragen, die du an Claude stellen kannst:
+Sobald der Server laeuft, kannst du deinen KI-Assistenten direkt auf Deutsch ansprechen:
 
-### Kunden & Adressen
-- "Zeig mir alle Kunden aus Deutschland"
-- "Suche den Kunden mit der Kundennummer K10001"
-- "Leg einen neuen Kunden an: Firma Beispiel GmbH, Musterweg 5, 80331 Muenchen"
-- "Aendere die E-Mail-Adresse von Kunde 42 auf info@beispiel.de"
+- *"Zeig mir alle offenen Auftraege"*
+- *"Wie viele Artikel haben wir auf Lager?"*
+- *"Erstelle einen neuen Kunden: Firma Muster GmbH, Musterstr. 1, 12345 Berlin"*
+- *"Was wurde letzte Woche fakturiert?"*
 
-### Artikel & Lager
-- "Welche Artikel haben wir im Sortiment?"
-- "Zeig mir Artikel 15 mit Preisen und Lagerbestand"
-- "Wie viel PLA-Filament ist noch auf Lager?"
-
-### Auftraege & Rechnungen
-- "Erstelle einen Auftrag fuer Kunde K10001 ueber 5x Artikel A1001 zu je 29,90 EUR"
-- "Zeig mir alle offenen Auftraege"
-- "Wandle Auftrag 1234 in eine Rechnung um"
-- "Erstelle einen Lieferschein fuer Auftrag 1234"
-- "Markiere Rechnung 5678 als bezahlt"
-
-### Sonstiges
-- "Zeig mir die letzten 10 Angebote"
-- "Erstelle eine Trackingnummer DHL123456 fuer Lieferschein 42"
-- "Welche Versandarten gibt es?"
-
----
+Dein KI-Assistent waehlt automatisch die passenden Tools und Resources aus.
 
 ## Verfuegbare Funktionen
 
-### Daten lesen (Resources)
+### Resources (Lesen)
 
-| Funktion | Beschreibung |
-|----------|-------------|
-| Adressen/Kunden | Alle Adressen auflisten oder einzelne per ID abrufen |
-| Lieferadressen | Lieferadressen zu einem Kunden anzeigen |
-| Artikel | Artikel mit Preisen, Lagerbestand und Dateien |
-| Artikelkategorien | Kategorien/Warengruppen auflisten |
-| Gruppen | Adress- und Artikelgruppen |
-| Steuersaetze | Verfuegbare Steuersaetze |
-| Zahlungsweisen | Zahlungsmethoden auflisten |
-| Versandarten | Versandoptionen anzeigen |
-| Laender | Laenderliste mit ISO-Codes |
-| Eigenschaften | Artikeleigenschaften |
-| Angebote | Angebote mit Positionen und Protokoll |
-| Auftraege | Auftraege mit Positionen und Protokoll |
-| Rechnungen | Rechnungen mit Positionen und Protokoll |
-| Lieferscheine | Lieferscheine mit Positionen und Protokoll |
-| Gutschriften | Gutschriften mit Positionen und Protokoll |
-| Lagerchargen | Lagerbestaende nach Chargen |
-| Lager-MHD | Lagerbestaende nach Mindesthaltbarkeit |
-| Trackingnummern | Sendungsverfolgungsnummern |
-| Abo-Artikel | Wiederkehrende Bestellungen |
-| CRM-Dokumente | Notizen, E-Mails, Telefonprotokolle |
-| Wiedervorlagen | Erinnerungen und Aufgaben |
-| Dateien | Hochgeladene Dateien und Dokumente |
+| Resource | Beschreibung |
+|---|---|
+| Artikel | Artikelstammdaten, Preise, Lagerbestaende |
+| Adressen | Kunden, Lieferanten, Kontakte |
+| Auftraege | Auftragskoepfe und -positionen |
+| Rechnungen | Rechnungskoepfe und -positionen |
+| Lieferscheine | Lieferscheinkoepfe und -positionen |
+| Gutschriften | Gutschriftskoepfe und -positionen |
+| Angebote | Angebotskoepfe und -positionen |
+| Bestellungen | Bestellkoepfe und -positionen |
+| Produktion | Stuecklisten |
+| Lager | Lagerbestaende, Lagerorte |
+| Tracking | Sendungsverfolgung |
 
-### Daten schreiben (Tools)
+### Tools (Schreiben)
 
-| Funktion | Beschreibung |
-|----------|-------------|
-| Adresse erstellen | Neuen Kunden oder Lieferanten anlegen |
-| Adresse bearbeiten | Bestehende Adresse aendern |
-| Lieferadresse erstellen | Lieferadresse zu einem Kunden hinzufuegen |
-| Lieferadresse bearbeiten | Lieferadresse aendern |
-| Lieferadresse loeschen | Lieferadresse entfernen |
-| Auftrag erstellen | Neuen Auftrag anlegen |
-| Angebot erstellen | Neues Angebot erstellen |
-| Rechnung erstellen | Neue Rechnung erstellen |
-| Lieferschein erstellen | Neuen Lieferschein erstellen |
-| Gutschrift erstellen | Neue Gutschrift erstellen |
-| Auftrag freigeben | Auftrag zur Bearbeitung freigeben |
-| Rechnung freigeben | Rechnung finalisieren |
-| Angebot in Auftrag | Angebot in einen Auftrag umwandeln |
-| Auftrag in Rechnung | Auftrag in Rechnung umwandeln (erstellt auch Lieferschein) |
-| PDF abrufen | PDF eines Belegs herunterladen |
-| Rechnung als bezahlt markieren | Zahlungseingang verbuchen |
-| Entwurfsrechnung loeschen | Noch nicht freigegebene Rechnung loeschen |
-| Trackingnummer erstellen | Sendungsverfolgung hinzufuegen |
-| CRM-Dokument erstellen | Notiz, E-Mail oder Telefonprotokoll anlegen |
-| Abo-Artikel erstellen | Wiederkehrende Bestellung einrichten |
-| Wiedervorlage erstellen | Erinnerung/Aufgabe anlegen |
-| Datei hochladen | Datei an einen Datensatz anhaengen |
-
----
+| Tool | Beschreibung |
+|---|---|
+| Belege erstellen | Auftraege, Rechnungen, Lieferscheine, Gutschriften, Angebote, Bestellungen |
+| Belege bearbeiten | Positionen hinzufuegen, Status aendern |
+| Adressen | Kunden/Lieferanten anlegen und bearbeiten |
+| Artikel | Artikelstammdaten bearbeiten |
+| Abos | Wiederkehrende Auftraege verwalten |
 
 ## Haeufige Probleme
 
-### "Connection refused" oder "ECONNREFUSED"
+### Dein KI-Assistent kann nicht auf OpenXE zugreifen
 
-**Ursache:** Claude kann dein OpenXE nicht erreichen.
+- Pruefe ob die OpenXE-URL erreichbar ist (`curl http://dein-openxe-server/api/index.php`)
+- Pruefe ob der API-Benutzer korrekt eingerichtet ist
+- Pruefe ob die Umgebungsvariablen gesetzt sind
 
-**Loesungen:**
-- Pruefe ob die URL in `OPENXE_URL` korrekt ist
-- Pruefe ob OpenXE laeuft (oeffne die URL im Browser)
-- Wenn OpenXE auf einem anderen Rechner laeuft: Ist der Port (meist 80 oder 443) in der Firewall freigegeben?
+### Authentifizierung schlaegt fehl
 
-### "401 Unauthorized" oder "Authentication failed"
+- OpenXE nutzt HTTP Digest Auth -- stelle sicher, dass der Benutzer unter **API > REST-API** ein Passwort hat
+- Benutzername und Passwort duerfen keine Sonderzeichen enthalten, die Probleme mit Umgebungsvariablen verursachen
 
-**Ursache:** Die Zugangsdaten stimmen nicht.
+### Timeout bei grossen Abfragen
 
-**Loesungen:**
-- Pruefe `OPENXE_USERNAME` und `OPENXE_PASSWORD`
-- Der Benutzername ist die **Remotedomain** aus dem API-Account, nicht dein Login-Name
-- Das Passwort ist der **Initkey**, nicht dein Login-Passwort
-- Ist der API-Account auf "Aktiv" gesetzt?
-
-### "403 Forbidden" oder "Permission denied"
-
-**Ursache:** Der API-Benutzer hat nicht genuegend Rechte.
-
-**Loesung:** Pruefe die Berechtigungen des API-Accounts in OpenXE. Fuer vollen Zugriff setze `["*"]` als Permissions.
-
-### Claude zeigt keine OpenXE-Tools an
-
-**Loesungen:**
-- Hast du Claude Desktop nach der Konfigurationsaenderung komplett neu gestartet?
-- Ist die JSON-Datei syntaktisch korrekt? (Kein Komma am Ende, alle Klammern geschlossen)
-- Stimmt der Pfad zur `index.ts`-Datei?
-- Fuehre im Projektordner `npm run build` aus -- wurde erfolgreich kompiliert?
-
-### "OPENXE_URL is required" oder aehnliche Fehlermeldung
-
-**Ursache:** Die Umgebungsvariablen sind nicht gesetzt.
-
-**Loesungen:**
-- Bei Claude Desktop: Stehen die Variablen im `"env"`-Block der Konfiguration?
-- Bei Claude Code: Hast du die `export`-Befehle im selben Terminal ausgefuehrt, in dem du `claude` startest?
-
-### Timeout-Fehler
-
-**Ursache:** OpenXE antwortet zu langsam.
-
-**Loesung:** Du kannst das Timeout erhoehen, indem du `OPENXE_TIMEOUT` auf einen hoeheren Wert setzt (z.B. `60000` fuer 60 Sekunden). Standard sind 30 Sekunden.
-
-### Positionen im PDF haben falsche Schriftgroesse
-
-**Ursache:** Du hast `bezeichnung` in den Auftragspositionen mitgeschickt.
-
-**Loesung:** Schicke in den Positionen nur `nummer`, `menge` und `preis` -- die Bezeichnung wird automatisch aus den Artikelstammdaten uebernommen.
-
----
+- Erhoehe `OPENXE_TIMEOUT` (Default: 30000ms)
+- Verwende spezifischere Abfragen statt "zeig mir alles"
 
 ## Wichtige Hinweise
 
-### Sicherheit
+- **Backup:** Erstelle immer ein Backup, bevor du Schreiboperationen auf Produktivsystemen ausfuehrst
+- **Testinstanz:** Teste neue Workflows zuerst auf einer Testinstanz
+- **API-Berechtigungen:** Der API-Benutzer hat vollen Zugriff -- schraenke ihn bei Bedarf ein
+- **Keine Loesch-Operationen:** Der Server unterstuetzt bewusst keine Loesch-Operationen, um versehentlichen Datenverlust zu vermeiden
 
-- **Teile deine API-Zugangsdaten niemals oeffentlich** (z.B. nicht in Git-Repositories, nicht in Chatverlaeufen)
-- Der API-Benutzer hat **direkten Zugriff auf dein ERP** -- verwende im Zweifelsfall eingeschraenkte Berechtigungen
-- Wenn du den Server nicht mehr brauchst, **deaktiviere den API-Account** in OpenXE
+## Projektstruktur
 
-### Datenintegritaet
-
-- Claude kann **echte Daten in deinem ERP aendern** -- teste neue Ablaeufe zuerst mit unwichtigen Testdaten
-- **Freigegebene Rechnungen koennen nicht geloescht werden** -- nur Entwuerfe (ohne Belegnummer) lassen sich entfernen
-- Bei der Kundennummer immer `NEU` setzen lassen, damit das System eine eindeutige Nummer vergibt
-
-### Technische Details
-
-- Der Server kommuniziert ueber **HTTP Digest Authentication** mit OpenXE
-- **Lesezugriffe** (Daten anzeigen) nutzen die REST v1 API
-- **Schreibzugriffe** (Daten anlegen/aendern) nutzen die Legacy API (weil REST v1 POST/PUT bei einigen Endpunkten fehlerhaft ist)
-- Die Positionsliste bei Auftraegen hat ein spezielles Format: `{artikelliste: {position: [{nummer, menge, preis}]}}`
-
-### Updates
-
-Um den MCP-Server zu aktualisieren:
-
-```bash
-cd openxe-mcp-server
-git pull
-npm install
-npm run build
+```
+src/
+  index.ts          # MCP-Server Einstiegspunkt
+  config.ts         # Umgebungsvariablen-Parsing (Zod)
+  client/           # HTTP Digest Auth Client fuer OpenXE
+  tools/            # MCP Tool Handler (Schreiben via Legacy API)
+  resources/        # MCP Resource Handler (Lesen via REST v1)
+  schemas/          # Zod-Schemas fuer Request-Validierung
+tests/
+  client/           # HTTP-Client Unit-Tests
+  tools/            # Tool-Handler Tests
+  resources/        # Resource-Handler Tests
+  integration/      # Integration-Test Stubs
+docs/
+  api-reference/    # Verifizierte OpenXE API-Dokumentation
+  llm/              # LLM-optimierte API-Referenz
 ```
 
-Danach Claude Desktop neu starten.
+## API-Dokumentation
 
----
+Das Verzeichnis `docs/api-reference/` enthaelt verifizierte API-Dokumentation:
 
-## Hilfe & Support
+- **AUTH.md** -- HTTP Digest Authentifizierung
+- **LEGACY-API.md** -- Legacy Write API (genutzt von Tools)
+- **REST-V1-STAMMDATEN.md** -- Stammdaten-Endpunkte
+- **REST-V1-BELEGE.md** -- Beleg-Endpunkte (Auftraege, Rechnungen, etc.)
+- **REST-V1-SONSTIGE.md** -- Sonstige REST-Endpunkte
+- **SPEZIAL-APIS.md** -- Spezial-API-Endpunkte
 
-- **GitHub Issues:** Erstelle ein Issue im [GitHub-Repository](https://github.com/3DPartner/openxe-mcp-server/issues)
-- **OpenXE Dokumentation:** [openxe.de](https://openxe.de)
-- **MCP Protokoll:** [modelcontextprotocol.io](https://modelcontextprotocol.io)
+Alle Dokumente wurden gegen eine live OpenXE v1.12 Instanz verifiziert.
 
----
+## Lizenz
 
-*Diese Anleitung wurde fuer OpenXE v1.12 und den OpenXE MCP Server erstellt.*
+MIT -- siehe [LICENSE](LICENSE).
