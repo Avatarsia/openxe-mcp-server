@@ -36,9 +36,17 @@ import {
   handleDocumentTool,
 } from "./tools/document-tools.js";
 import {
+  DOCUMENT_READ_TOOL_DEFINITIONS,
+  handleDocumentReadTool,
+} from "./tools/document-read-tools.js";
+import {
   SUBSCRIPTION_TOOL_DEFINITIONS,
   handleSubscriptionTool,
 } from "./tools/subscription-tools.js";
+import {
+  READ_TOOL_DEFINITIONS,
+  handleReadTool,
+} from "./tools/read-tools.js";
 
 async function main() {
   const config = loadConfig();
@@ -177,6 +185,7 @@ async function main() {
   const ALL_TOOLS = [
     ...ADDRESS_TOOL_DEFINITIONS,
     ...DOCUMENT_TOOL_DEFINITIONS,
+    ...DOCUMENT_READ_TOOL_DEFINITIONS,
     ...SUBSCRIPTION_TOOL_DEFINITIONS,
   ];
 
@@ -191,6 +200,9 @@ async function main() {
   const documentToolNames = new Set(
     DOCUMENT_TOOL_DEFINITIONS.map((t) => t.name)
   );
+  const documentReadToolNames = new Set(
+    DOCUMENT_READ_TOOL_DEFINITIONS.map((t) => t.name)
+  );
   const subscriptionToolNames = new Set(
     SUBSCRIPTION_TOOL_DEFINITIONS.map((t) => t.name)
   );
@@ -201,6 +213,9 @@ async function main() {
 
     if (addressToolNames.has(name)) {
       return handleAddressTool(name, toolArgs, client) as Promise<ServerResult>;
+    }
+    if (documentReadToolNames.has(name)) {
+      return handleDocumentReadTool(name, toolArgs, client) as Promise<ServerResult>;
     }
     if (documentToolNames.has(name)) {
       return handleDocumentTool(name, toolArgs, client) as Promise<ServerResult>;
