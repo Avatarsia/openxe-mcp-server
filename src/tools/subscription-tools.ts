@@ -31,11 +31,13 @@ const CrmDocumentCreateInput = z.object({
 });
 
 const TrackingCreateInput = z.object({
-  lieferschein: z.number().int().positive().describe("Delivery note ID"),
-  tracking: z.string().describe("Tracking number"),
-  versandart: z.string().optional().describe("Shipping method"),
-  gewicht: z.number().optional().describe("Weight"),
-  tracking_link: z.string().optional().describe("Tracking URL"),
+  tracking: z.string().describe("Tracking-Nummer (z.B. DHL Sendungsnummer)"),
+  lieferschein: z.string().optional().describe("Lieferschein-Belegnummer (z.B. '300001')"),
+  auftrag: z.string().optional().describe("Auftrags-Belegnummer (alternative zu lieferschein)"),
+  internet: z.string().optional().describe("Internet-Bestellnummer (alternative zu lieferschein)"),
+  gewicht: z.string().describe("Gewicht in kg (z.B. '2.5')"),
+  anzahlpakete: z.string().describe("Anzahl Pakete (z.B. '1')"),
+  versendet_am: z.string().describe("Versanddatum YYYY-MM-DD (z.B. '2026-04-01')"),
 });
 
 const ResubmissionCreateInput = z.object({
@@ -112,7 +114,7 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-create-tracking",
     description:
-      "Create a tracking number for a delivery note. Required: lieferschein, tracking.",
+      "Create a tracking number for a shipment. Required: tracking, gewicht, anzahlpakete, versendet_am. One of lieferschein/auftrag/internet must also be provided to identify the shipment.",
     inputSchema: zodToJsonSchema(TrackingCreateInput) as Record<
       string,
       unknown
@@ -210,7 +212,16 @@ export async function handleSubscriptionTool(
     }
     case "openxe-upload-file": {
       const input = FileUploadInput.parse(args);
-      const result = await client.post("/v1/dateien", input);
+      // /v1/dateien requires x-www-form-urlencoded, not JSON
+      const formData: Record<string, string> = {
+        filename: input.filename,
+        content_base64: input.content_base64,
+        objekt: input.objekt,
+        parameter: String(input.parameter),
+      };
+      if (input.titel) formData.titel = input.titel;
+      if (input.beschreibung) formData.beschreibung = input.beschreibung;
+      const result = await client.postForm("/v1/dateien", formData);
       return {
         content: [
           { type: "text", text: JSON.stringify(result.data, null, 2) },

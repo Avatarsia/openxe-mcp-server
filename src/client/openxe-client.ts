@@ -127,6 +127,24 @@ export class OpenXEClient {
   }
 
   /**
+   * POST to a REST v1 endpoint with URL-encoded form data.
+   * Used for endpoints that reject JSON (e.g. /v1/dateien).
+   */
+  async postForm<T = unknown>(
+    path: string,
+    data: Record<string, string>
+  ): Promise<ApiResponse<T>> {
+    const url = this.buildUrl(path);
+    const rawBody = new URLSearchParams(data).toString();
+    const response = await this.authenticatedRequest("POST", url, undefined, {
+      rawBody,
+      contentType: "application/x-www-form-urlencoded",
+    });
+    const responseData = (await response.json()) as T;
+    return { data: responseData };
+  }
+
+  /**
    * PUT to a REST v1 endpoint.
    */
   async put<T = unknown>(
@@ -292,15 +310,19 @@ export class OpenXEClient {
   private async authenticatedRequest(
     method: string,
     url: string,
-    body?: Record<string, unknown>
+    body?: Record<string, unknown>,
+    options?: { rawBody?: string; contentType?: string }
   ): Promise<Response> {
     const parsed = new URL(url);
     const uri = parsed.search ? `${parsed.pathname}${parsed.search}` : parsed.pathname;
     const headers: Record<string, string> = {
       Accept: "application/json",
     };
-    if (body) {
-      headers["Content-Type"] = "application/json";
+
+    // Determine serialised body and content-type
+    const serialisedBody = options?.rawBody ?? (body ? JSON.stringify(body) : undefined);
+    if (serialisedBody !== undefined) {
+      headers["Content-Type"] = options?.contentType ?? "application/json";
     }
 
     // If we have a cached challenge, try the authenticated request first
@@ -310,7 +332,7 @@ export class OpenXEClient {
       const response = await this.fetchFn(url, {
         method,
         headers,
-        body: body ? JSON.stringify(body) : undefined,
+        body: serialisedBody,
       });
 
       // If not 401, we're done
@@ -361,7 +383,7 @@ export class OpenXEClient {
     const response = await this.fetchFn(url, {
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined,
+      body: serialisedBody,
     });
 
     if (response.status >= 400) {
