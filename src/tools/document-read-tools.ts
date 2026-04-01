@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
+import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS } from "../utils/field-filter.js";
 
 // --- Shared schemas ---
 
@@ -16,6 +17,11 @@ const ListFilters = z.object({
     .string()
     .optional()
     .describe("Datum bis (YYYY-MM-DD), filtert datum <= Wert"),
+  full: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("Wenn true, alle Felder zurueckgeben; Standard: nur Schluesselfelder"),
 });
 
 const GetByIdInput = z.object({
@@ -48,6 +54,7 @@ interface DocType {
   getName: string;
   path: string;
   labelDe: string;
+  slimKey: string;
 }
 
 const DOC_TYPES: DocType[] = [
@@ -56,30 +63,35 @@ const DOC_TYPES: DocType[] = [
     getName: "openxe-get-quote",
     path: "angebote",
     labelDe: "Angebote",
+    slimKey: "quote",
   },
   {
     listName: "openxe-list-orders",
     getName: "openxe-get-order",
     path: "auftraege",
-    labelDe: "Auftraege",
+    labelDe: "Aufträge",
+    slimKey: "order",
   },
   {
     listName: "openxe-list-invoices",
     getName: "openxe-get-invoice",
     path: "rechnungen",
     labelDe: "Rechnungen",
+    slimKey: "invoice",
   },
   {
     listName: "openxe-list-delivery-notes",
     getName: "openxe-get-delivery-note",
     path: "lieferscheine",
     labelDe: "Lieferscheine",
+    slimKey: "deliveryNote",
   },
   {
     listName: "openxe-list-credit-memos",
     getName: "openxe-get-credit-memo",
     path: "gutschriften",
     labelDe: "Gutschriften",
+    slimKey: "creditMemo",
   },
 ];
 
@@ -89,7 +101,7 @@ export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = DOC_TYPES.flatMa
   (dt) => [
     {
       name: dt.listName,
-      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte.`,
+      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Gibt standardmaessig nur Schluesselfelder zurueck (id, belegnr, status, name, datum, summe). Mit full=true alle Felder. Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte.`,
       inputSchema: zodToJsonSchema(ListFilters) as Record<string, unknown>,
     },
     {
@@ -103,10 +115,12 @@ export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = DOC_TYPES.flatMa
 // --- Lookup maps ---
 
 const LIST_TOOL_PATH: Record<string, string> = {};
+const LIST_TOOL_SLIM: Record<string, readonly string[]> = {};
 const GET_TOOL_PATH: Record<string, string> = {};
 
 for (const dt of DOC_TYPES) {
   LIST_TOOL_PATH[dt.listName] = dt.path;
+  LIST_TOOL_SLIM[dt.listName] = SLIM_FIELDS[dt.slimKey];
   GET_TOOL_PATH[dt.getName] = dt.path;
 }
 
@@ -129,15 +143,31 @@ export async function handleDocumentReadTool(
     if (filters.datum_lte) params.datum_lte = filters.datum_lte;
 
     const result = await client.get(`/v1/belege/${listPath}`, params);
+
+    let rows = Array.isArray(result.data) ? result.data : [result.data];
+
+    // Apply slim mode unless full=true
+    if (!filters.full) {
+      const slimFields = LIST_TOOL_SLIM[toolName];
+      rows = applySlimMode(rows, [...slimFields]) as Record<string, unknown>[];
+    }
+
+    // Truncate to MAX_LIST_RESULTS
+    const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(rows, MAX_LIST_RESULTS);
+
+    const response: Record<string, unknown> = {
+      data: truncated,
+      pagination: result.pagination,
+    };
+    if (wasTruncated) {
+      response._warning = `Ergebnis auf ${MAX_LIST_RESULTS} von ${total} Eintraegen gekuerzt. Verwende Filter um die Ergebnismenge einzuschraenken.`;
+    }
+
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify(
-            { data: result.data, pagination: result.pagination },
-            null,
-            2
-          ),
+          text: JSON.stringify(response, null, 2),
         },
       ],
     };

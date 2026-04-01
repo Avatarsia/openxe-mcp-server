@@ -33,6 +33,10 @@ export const SLIM_FIELDS: Record<string, string[]> = {
     "id", "dateiname", "objekt", "parameter",
     "stichwort", "datum",
   ],
+  quote: [
+    "id", "belegnr", "kundennummer", "name",
+    "status", "datum", "gesamtsumme", "waehrung",
+  ],
   order: [
     "id", "belegnr", "kundennummer", "name",
     "status", "datum", "gesamtsumme", "waehrung",
@@ -40,6 +44,14 @@ export const SLIM_FIELDS: Record<string, string[]> = {
   invoice: [
     "id", "belegnr", "kundennummer", "name",
     "status", "datum", "soll", "waehrung",
+  ],
+  deliveryNote: [
+    "id", "belegnr", "kundennummer", "name",
+    "status", "datum", "versandart",
+  ],
+  creditMemo: [
+    "id", "belegnr", "kundennummer", "name",
+    "status", "datum", "soll", "ist", "waehrung",
   ],
 };
 
