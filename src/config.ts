@@ -6,13 +6,17 @@ const EnvSchema = z.object({
   OPENXE_USERNAME: z.string().min(1, "OPENXE_USERNAME is required"),
   OPENXE_PASSWORD: z.string().min(1, "OPENXE_PASSWORD is required"),
   OPENXE_TIMEOUT: z.coerce.number().positive().default(30000),
+  OPENXE_MODE: z.enum(["router", "full"]).default("router"),
 });
+
+export type OpenXEMode = "router" | "full";
 
 export interface OpenXEConfig {
   baseUrl: string;
   username: string;
   password: string;
   timeout: number;
+  mode: OpenXEMode;
 }
 
 export function loadConfig(): OpenXEConfig {
@@ -22,5 +26,6 @@ export function loadConfig(): OpenXEConfig {
     username: env.OPENXE_USERNAME,
     password: env.OPENXE_PASSWORD,
     timeout: env.OPENXE_TIMEOUT,
+    mode: env.OPENXE_MODE,
   };
 }

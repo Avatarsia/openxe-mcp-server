@@ -47,6 +47,12 @@ import {
   READ_TOOL_DEFINITIONS,
   handleReadTool,
 } from "./tools/read-tools.js";
+import {
+  DISCOVER_TOOL_DEFINITION,
+  ROUTER_TOOL_DEFINITION,
+  handleDiscover,
+  handleRouter,
+} from "./tools/router.js";
 
 async function main() {
   const config = loadConfig();
@@ -182,13 +188,22 @@ async function main() {
   });
 
   // === List Tools ===
-  const ALL_TOOLS = [
+  const FULL_TOOLS = [
     ...ADDRESS_TOOL_DEFINITIONS,
     ...DOCUMENT_TOOL_DEFINITIONS,
     ...DOCUMENT_READ_TOOL_DEFINITIONS,
     ...SUBSCRIPTION_TOOL_DEFINITIONS,
     ...READ_TOOL_DEFINITIONS,
   ];
+
+  const ROUTER_TOOLS = [
+    DISCOVER_TOOL_DEFINITION,
+    ROUTER_TOOL_DEFINITION,
+  ];
+
+  const ALL_TOOLS = config.mode === "router" ? ROUTER_TOOLS : FULL_TOOLS;
+
+  console.error(`OpenXE MCP Server mode: ${config.mode} (${ALL_TOOLS.length} tools registered)`);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return { tools: ALL_TOOLS };
@@ -215,6 +230,15 @@ async function main() {
     const { name, arguments: args } = request.params;
     const toolArgs = (args ?? {}) as Record<string, unknown>;
 
+    // Router mode tools
+    if (name === "openxe-discover") {
+      return handleDiscover(toolArgs) as ServerResult;
+    }
+    if (name === "openxe") {
+      return handleRouter(toolArgs, client) as Promise<ServerResult>;
+    }
+
+    // Full mode tools (also reachable internally via router)
     if (addressToolNames.has(name)) {
       return handleAddressTool(name, toolArgs, client) as Promise<ServerResult>;
     }
