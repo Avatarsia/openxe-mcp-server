@@ -100,6 +100,7 @@ describe("Router Tools", () => {
       put: ReturnType<typeof vi.fn>;
       delete: ReturnType<typeof vi.fn>;
       legacyPost: ReturnType<typeof vi.fn>;
+      getRaw: ReturnType<typeof vi.fn>;
     };
 
     beforeEach(() => {
@@ -109,6 +110,7 @@ describe("Router Tools", () => {
         put: vi.fn().mockResolvedValue({ data: { id: 1 } }),
         delete: vi.fn().mockResolvedValue({}),
         legacyPost: vi.fn().mockResolvedValue({ data: { id: 1 }, success: true }),
+        getRaw: vi.fn().mockResolvedValue({ data: Buffer.from("fake-pdf"), contentType: "application/pdf" }),
       };
     });
 

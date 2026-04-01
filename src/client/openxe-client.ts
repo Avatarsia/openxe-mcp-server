@@ -114,6 +114,25 @@ export class OpenXEClient {
   }
 
   /**
+   * GET a raw binary response (e.g. PDF). Performs the same Digest Auth
+   * handshake as {@link get} but does NOT attempt JSON parsing. Returns the
+   * response body as a Node.js Buffer together with the Content-Type header.
+   */
+  async getRaw(
+    path: string,
+    params?: Record<string, string>
+  ): Promise<{ data: Buffer; contentType: string }> {
+    const url = this.buildUrl(path, params);
+    const response = await this.authenticatedRequest("GET", url);
+
+    const contentType = response.headers.get("content-type") ?? "application/octet-stream";
+    const arrayBuf = await response.arrayBuffer();
+    const data = Buffer.from(arrayBuf);
+
+    return { data, contentType };
+  }
+
+  /**
    * POST to a REST v1 endpoint (e.g., creating delivery addresses).
    */
   async post<T = unknown>(

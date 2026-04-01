@@ -6,10 +6,14 @@ import {
 import { OpenXEClient } from "../../src/client/openxe-client.js";
 
 describe("Document Tools", () => {
-  let mockClient: { legacyPost: ReturnType<typeof vi.fn>; delete: ReturnType<typeof vi.fn> };
+  let mockClient: {
+    legacyPost: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
+    getRaw: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
-    mockClient = { legacyPost: vi.fn(), delete: vi.fn() };
+    mockClient = { legacyPost: vi.fn(), delete: vi.fn(), getRaw: vi.fn() };
   });
 
   it("defines all expected document tools", () => {
@@ -62,10 +66,11 @@ describe("Document Tools", () => {
     expect(result.content[0].text).toContain("deleted");
   });
 
-  it("gets document PDF via BelegPDF", async () => {
-    mockClient.legacyPost.mockResolvedValue({
-      success: true,
-      data: { base64: "JVBER...", filename: "RE-2026-0001.pdf" },
+  it("gets document PDF via getRaw with GET params", async () => {
+    const fakePdf = Buffer.from("%PDF-1.4 fake content");
+    mockClient.getRaw.mockResolvedValue({
+      data: fakePdf,
+      contentType: "application/pdf",
     });
 
     const result = await handleDocumentTool(
@@ -74,10 +79,41 @@ describe("Document Tools", () => {
       mockClient as unknown as OpenXEClient
     );
 
-    expect(mockClient.legacyPost).toHaveBeenCalledWith("BelegPDF", {
-      typ: "rechnung",
-      id: 99,
+    // Should call getRaw with GET params (beleg=rechnung&id=99), NOT legacyPost
+    expect(mockClient.getRaw).toHaveBeenCalledWith("/BelegPDF", {
+      beleg: "rechnung",
+      id: "99",
     });
-    expect(result.content[0].text).toContain("RE-2026-0001.pdf");
+    expect(mockClient.legacyPost).not.toHaveBeenCalled();
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.filename).toBe("rechnung-99.pdf");
+    expect(parsed.content_type).toBe("application/pdf");
+    expect(parsed.size_bytes).toBe(fakePdf.length);
+    expect(parsed.base64).toBe(fakePdf.toString("base64"));
+  });
+
+  it("gets document PDF for angebot typ", async () => {
+    const fakePdf = Buffer.from("%PDF-1.4 angebot");
+    mockClient.getRaw.mockResolvedValue({
+      data: fakePdf,
+      contentType: "application/pdf",
+    });
+
+    const result = await handleDocumentTool(
+      "openxe-get-document-pdf",
+      { typ: "angebot", id: 1 },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(mockClient.getRaw).toHaveBeenCalledWith("/BelegPDF", {
+      beleg: "angebot",
+      id: "1",
+    });
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.filename).toBe("angebot-1.pdf");
+    expect(parsed.content_type).toBe("application/pdf");
+    expect(parsed.size_bytes).toBe(fakePdf.length);
   });
 });

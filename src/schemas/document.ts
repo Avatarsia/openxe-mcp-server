@@ -159,7 +159,7 @@ export const DocumentIdInput = z.object({
 
 export const BelegPDFInput = z.object({
   typ: z
-    .enum(["angebot", "auftrag", "rechnung", "lieferschein", "gutschrift"])
+    .enum(["angebot", "auftrag", "rechnung", "lieferschein", "gutschrift", "bestellung"])
     .describe("Document type"),
   id: z.number().int().positive().describe("Document ID"),
 });

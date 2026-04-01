@@ -91,7 +91,7 @@ export const DOCUMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-get-document-pdf",
     description:
-      "Get any document as PDF (base64 encoded). Required: typ (angebot|auftrag|rechnung|lieferschein|gutschrift), id.",
+      "Get any document as PDF (base64 encoded). Required: typ (angebot|auftrag|rechnung|lieferschein|gutschrift|bestellung), id.",
     inputSchema: zodToJsonSchema(BelegPDFInput) as Record<string, unknown>,
   },
 ];
@@ -106,7 +106,6 @@ const LEGACY_ACTION_MAP: Record<string, string> = {
   "openxe-release-order": "AuftragFreigabe",
   "openxe-release-invoice": "RechnungFreigabe",
   "openxe-mark-invoice-paid": "RechnungAlsBezahltMarkieren",
-  "openxe-get-document-pdf": "BelegPDF",
 };
 
 /**
@@ -125,7 +124,6 @@ const LEGACY_WRAPPER_KEY: Record<string, string | null> = {
   "openxe-release-order": "auftrag",
   "openxe-release-invoice": "rechnung",
   "openxe-mark-invoice-paid": "rechnung",
-  "openxe-get-document-pdf": null, // BelegPDF uses flat {typ, id}
 };
 
 const SCHEMA_MAP: Record<string, z.ZodSchema> = {
@@ -138,7 +136,6 @@ const SCHEMA_MAP: Record<string, z.ZodSchema> = {
   "openxe-release-order": DocumentIdInput,
   "openxe-release-invoice": DocumentIdInput,
   "openxe-mark-invoice-paid": DocumentIdInput,
-  "openxe-get-document-pdf": BelegPDFInput,
 };
 
 export async function handleDocumentTool(
@@ -155,6 +152,33 @@ export async function handleDocumentTool(
         {
           type: "text",
           text: `Draft invoice ${id} deleted successfully (positions and protocol entries cascaded).`,
+        },
+      ],
+    };
+  }
+
+  // Special case: BelegPDF uses GET params and returns binary PDF
+  if (toolName === "openxe-get-document-pdf") {
+    const input = BelegPDFInput.parse(args);
+    const result = await client.getRaw("/BelegPDF", {
+      beleg: input.typ,
+      id: String(input.id),
+    });
+    const base64 = result.data.toString("base64");
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              filename: `${input.typ}-${input.id}.pdf`,
+              content_type: result.contentType,
+              size_bytes: result.data.length,
+              base64: base64,
+            },
+            null,
+            2
+          ),
         },
       ],
     };
@@ -181,27 +205,6 @@ export async function handleDocumentTool(
       : (input as Record<string, unknown>);
 
   const result = await client.legacyPost(action, payload);
-
-  // Special handling for PDF — return base64 content
-  if (toolName === "openxe-get-document-pdf" && result.data) {
-    const pdfData = result.data as { base64: string; filename: string };
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(
-            {
-              filename: pdfData.filename,
-              base64_length: pdfData.base64?.length ?? 0,
-              base64: pdfData.base64,
-            },
-            null,
-            2
-          ),
-        },
-      ],
-    };
-  }
 
   return {
     content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
