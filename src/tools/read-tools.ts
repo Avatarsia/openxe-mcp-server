@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
-import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted } from "../utils/field-filter.js";
+import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList } from "../utils/field-filter.js";
 
 // --- Input Schemas ---
 
@@ -109,24 +109,6 @@ interface ToolResult {
   isError?: boolean;
 }
 
-// --- Helper: unwrap nested API data ---
-// The OpenXE API returns { data: { data: [...] } } through the client,
-// so result.data is { data: [...], pagination?: {...} } instead of a plain array.
-
-function unwrapList(rawData: unknown): any[] {
-  if (Array.isArray(rawData)) {
-    return rawData;
-  }
-  if (rawData && typeof rawData === 'object') {
-    const obj = rawData as Record<string, unknown>;
-    if (obj.data && Array.isArray(obj.data)) {
-      return obj.data;
-    }
-    return [rawData];
-  }
-  return [];
-}
-
 // --- Tool Definitions ---
 
 export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -186,22 +168,18 @@ export async function handleReadTool(
       const args = ListAddressesInput.parse(input);
       const { name: nameFilter, email, land, include_deleted, ...serverParams } = args;
 
-      // Only kundennummer, page, items go to the server
+      // Only kundennummer goes to the server
       const apiParams: Record<string, string | number | undefined> = {};
       if (serverParams.kundennummer) apiParams.kundennummer = serverParams.kundennummer;
-      if (serverParams.page) apiParams.page = serverParams.page;
-      if (serverParams.items) apiParams.items = serverParams.items;
 
-      const result = await client.get("/v1/adressen", apiParams);
+      let data = await fetchFilteredList(client, "/v1/adressen", apiParams, {
+        includeDeleted: include_deleted,
+      });
 
-      // Unwrap nested API response: API returns { data: { data: [...] } } or { data: [...] }
-      let data = unwrapList(result.data) as Record<string, unknown>[];
-      if (!include_deleted) data = filterDeleted(data) as Record<string, unknown>[];
-
-      // Client-side filtering for fields the server ignores
+      // Client-side filters (name, email, land)
       if (nameFilter) {
         const lowerFilter = nameFilter.toLowerCase();
-        data = data.filter((a) => {
+        data = data.filter((a: any) => {
           const n = String(a.name ?? "").toLowerCase();
           const fn = String(a.firma ?? "").toLowerCase();
           return n.includes(lowerFilter) || fn.includes(lowerFilter);
@@ -209,20 +187,19 @@ export async function handleReadTool(
       }
       if (email) {
         const lowerEmail = email.toLowerCase();
-        data = data.filter((a) =>
+        data = data.filter((a: any) =>
           String(a.email ?? "").toLowerCase().includes(lowerEmail)
         );
       }
       if (land) {
         const upperLand = land.toUpperCase();
-        data = data.filter((a) => String(a.land ?? "").toUpperCase() === upperLand);
+        data = data.filter((a: any) => String(a.land ?? "").toUpperCase() === upperLand);
       }
 
-      data = applySlimMode(data, SLIM_FIELDS.address) as Record<string, unknown>[];
-      const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
-      data = truncated;
+      const slimmed = applySlimMode(data, [...SLIM_FIELDS.address]) as Record<string, unknown>[];
+      const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(slimmed, MAX_LIST_RESULTS);
 
-      let text = JSON.stringify({ data }, null, 2);
+      let text = JSON.stringify(truncated, null, 2);
       if (wasTruncated) {
         text = `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter um die Ergebnismenge einzuschraenken. Fuer alle Details eines Eintrags nutze openxe-get-address.\n\n` + text;
       }
@@ -242,26 +219,21 @@ export async function handleReadTool(
 
     case "openxe-list-articles": {
       const args = ListArticlesInput.parse(input);
-      const { include_deleted: includeDeletedArt, ...filterArgs } = args;
+      const { include_deleted: includeDeletedArt, page: _p, items: _i, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.name_de) apiParams.name_de = filterArgs.name_de;
       if (filterArgs.nummer) apiParams.nummer = filterArgs.nummer;
       if (filterArgs.typ) apiParams.typ = filterArgs.typ;
       if (filterArgs.projekt) apiParams.projekt = filterArgs.projekt;
       if (filterArgs.include) apiParams.include = filterArgs.include;
-      if (filterArgs.page) apiParams.page = filterArgs.page;
-      if (filterArgs.items) apiParams.items = filterArgs.items;
 
-      const result = await client.get("/v1/artikel", apiParams);
-      // Unwrap nested API response
-      let data = unwrapList(result.data);
-      if (!includeDeletedArt) data = filterDeleted(data);
-
-      data = applySlimMode(data, SLIM_FIELDS.article) as any[];
+      const data = await fetchFilteredList(client, "/v1/artikel", apiParams, {
+        slimFields: SLIM_FIELDS.article,
+        includeDeleted: includeDeletedArt,
+      });
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
-      data = truncated;
 
-      let text = JSON.stringify({ data }, null, 2);
+      let text = JSON.stringify(truncated, null, 2);
       if (wasTruncated) {
         text = `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter um die Ergebnismenge einzuschraenken. Fuer alle Details eines Artikels nutze openxe-get-article.\n\n` + text;
       }
@@ -284,24 +256,19 @@ export async function handleReadTool(
 
     case "openxe-list-categories": {
       const args = ListCategoriesInput.parse(input);
-      const { include_deleted: includeDeletedCat, ...filterArgs } = args;
+      const { include_deleted: includeDeletedCat, page: _p, items: _i, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.bezeichnung) apiParams.bezeichnung = filterArgs.bezeichnung;
       if (filterArgs.parent !== undefined) apiParams.parent = filterArgs.parent;
       if (filterArgs.projekt) apiParams.projekt = filterArgs.projekt;
-      if (filterArgs.page) apiParams.page = filterArgs.page;
-      if (filterArgs.items) apiParams.items = filterArgs.items;
 
-      const result = await client.get("/v1/artikelkategorien", apiParams);
-      // Unwrap nested API response
-      let data = unwrapList(result.data);
-      if (!includeDeletedCat) data = filterDeleted(data);
-
-      data = applySlimMode(data, SLIM_FIELDS.category) as any[];
+      const data = await fetchFilteredList(client, "/v1/artikelkategorien", apiParams, {
+        slimFields: SLIM_FIELDS.category,
+        includeDeleted: includeDeletedCat,
+      });
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
-      data = truncated;
 
-      let text = JSON.stringify({ data }, null, 2);
+      let text = JSON.stringify(truncated, null, 2);
       if (wasTruncated) {
         text = `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter um die Ergebnismenge einzuschraenken.\n\n` + text;
       }
@@ -311,21 +278,15 @@ export async function handleReadTool(
 
     case "openxe-list-shipping-methods": {
       const args = ListShippingMethodsInput.parse(input);
-      const { include_deleted: includeDeletedShip, ...filterArgs } = args;
-      const apiParams: Record<string, string | number | undefined> = {};
-      if (filterArgs.page) apiParams.page = filterArgs.page;
-      if (filterArgs.items) apiParams.items = filterArgs.items;
+      const { include_deleted: includeDeletedShip, page: _p, items: _i } = args;
 
-      const result = await client.get("/v1/versandarten", apiParams);
-      // Unwrap nested API response
-      let data = unwrapList(result.data);
-      if (!includeDeletedShip) data = filterDeleted(data);
-
-      data = applySlimMode(data, SLIM_FIELDS.shipping) as any[];
+      const data = await fetchFilteredList(client, "/v1/versandarten", {}, {
+        slimFields: SLIM_FIELDS.shippingMethod,
+        includeDeleted: includeDeletedShip,
+      });
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
-      data = truncated;
 
-      let text = JSON.stringify({ data }, null, 2);
+      let text = JSON.stringify(truncated, null, 2);
       if (wasTruncated) {
         text = `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter um die Ergebnismenge einzuschraenken.\n\n` + text;
       }
@@ -335,24 +296,19 @@ export async function handleReadTool(
 
     case "openxe-list-files": {
       const args = ListFilesInput.parse(input);
-      const { include_deleted: includeDeletedFile, ...filterArgs } = args;
+      const { include_deleted: includeDeletedFile, page: _p, items: _i, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.objekt) apiParams.objekt = filterArgs.objekt;
       if (filterArgs.parameter) apiParams.parameter = filterArgs.parameter;
       if (filterArgs.stichwort) apiParams.stichwort = filterArgs.stichwort;
-      if (filterArgs.page) apiParams.page = filterArgs.page;
-      if (filterArgs.items) apiParams.items = filterArgs.items;
 
-      const result = await client.get("/v1/dateien", apiParams);
-      // Unwrap nested API response
-      let data = unwrapList(result.data);
-      if (!includeDeletedFile) data = filterDeleted(data);
-
-      data = applySlimMode(data, SLIM_FIELDS.file) as any[];
+      const data = await fetchFilteredList(client, "/v1/dateien", apiParams, {
+        slimFields: SLIM_FIELDS.file,
+        includeDeleted: includeDeletedFile,
+      });
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
-      data = truncated;
 
-      let text = JSON.stringify({ data }, null, 2);
+      let text = JSON.stringify(truncated, null, 2);
       if (wasTruncated) {
         text = `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter um die Ergebnismenge einzuschraenken.\n\n` + text;
       }

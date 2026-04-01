@@ -16,6 +16,20 @@ describe("Read Tools", () => {
     };
   });
 
+  /** Helper: mock returns data on first page, empty on subsequent pages */
+  function mockPaginatedGet(data: any[], pagination?: any) {
+    mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
+      const page = parseInt(params?.page ?? "1", 10);
+      if (page === 1) {
+        return Promise.resolve({
+          data,
+          pagination: pagination ?? { totalCount: data.length, page: 1, itemsPerPage: 100 },
+        });
+      }
+      return Promise.resolve({ data: [], pagination: undefined });
+    });
+  }
+
   it("defines all 7 read tools", () => {
     const names = READ_TOOL_DEFINITIONS.map((t) => t.name);
     expect(names).toContain("openxe-list-addresses");
@@ -37,10 +51,7 @@ describe("Read Tools", () => {
   });
 
   it("lists addresses with no filters", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [{ id: 1, name: "Acme" }],
-      pagination: { totalCount: 1, page: 1, itemsPerPage: 20 },
-    });
+    mockPaginatedGet([{ id: 1, name: "Acme" }]);
 
     const result = await handleReadTool(
       "openxe-list-addresses",
@@ -48,18 +59,18 @@ describe("Read Tools", () => {
       mockClient as unknown as OpenXEClient
     );
 
-    expect(mockClient.get).toHaveBeenCalledWith("/v1/adressen", {});
+    expect(mockClient.get).toHaveBeenCalledWith("/v1/adressen", {
+      page: "1",
+      items: "100",
+    });
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.data).toHaveLength(1);
-    expect(parsed.data[0].name).toBe("Acme");
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].name).toBe("Acme");
   });
 
   it("lists addresses with kundennummer (server-side filter)", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [{ id: 1, name: "Acme", kundennummer: "K1001" }],
-      pagination: { totalCount: 1, page: 1, itemsPerPage: 20 },
-    });
+    mockPaginatedGet([{ id: 1, name: "Acme", kundennummer: "K1001" }]);
 
     await handleReadTool(
       "openxe-list-addresses",
@@ -69,18 +80,17 @@ describe("Read Tools", () => {
 
     expect(mockClient.get).toHaveBeenCalledWith("/v1/adressen", {
       kundennummer: "K1001",
+      page: "1",
+      items: "100",
     });
   });
 
   it("filters addresses by name client-side", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [
-        { id: 1, name: "Acme GmbH", firma: "" },
-        { id: 2, name: "Beta Corp", firma: "" },
-        { id: 3, name: "Test", firma: "Acme Holding" },
-      ],
-      pagination: { totalCount: 3, page: 1, itemsPerPage: 20 },
-    });
+    mockPaginatedGet([
+      { id: 1, name: "Acme GmbH", firma: "" },
+      { id: 2, name: "Beta Corp", firma: "" },
+      { id: 3, name: "Test", firma: "Acme Holding" },
+    ]);
 
     const result = await handleReadTool(
       "openxe-list-addresses",
@@ -89,18 +99,15 @@ describe("Read Tools", () => {
     );
 
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.data).toHaveLength(2);
-    expect(parsed.data.map((a: any) => a.id)).toEqual([1, 3]);
+    expect(parsed).toHaveLength(2);
+    expect(parsed.map((a: any) => a.id)).toEqual([1, 3]);
   });
 
   it("filters addresses by email client-side", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [
-        { id: 1, name: "A", email: "info@acme.de" },
-        { id: 2, name: "B", email: "hello@beta.com" },
-      ],
-      pagination: undefined,
-    });
+    mockPaginatedGet([
+      { id: 1, name: "A", email: "info@acme.de" },
+      { id: 2, name: "B", email: "hello@beta.com" },
+    ]);
 
     const result = await handleReadTool(
       "openxe-list-addresses",
@@ -109,18 +116,15 @@ describe("Read Tools", () => {
     );
 
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.data).toHaveLength(1);
-    expect(parsed.data[0].id).toBe(1);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].id).toBe(1);
   });
 
   it("filters addresses by land client-side", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [
-        { id: 1, name: "A", land: "DE" },
-        { id: 2, name: "B", land: "AT" },
-      ],
-      pagination: undefined,
-    });
+    mockPaginatedGet([
+      { id: 1, name: "A", land: "DE" },
+      { id: 2, name: "B", land: "AT" },
+    ]);
 
     const result = await handleReadTool(
       "openxe-list-addresses",
@@ -129,8 +133,8 @@ describe("Read Tools", () => {
     );
 
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.data).toHaveLength(1);
-    expect(parsed.data[0].land).toBe("DE");
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].land).toBe("DE");
   });
 
   it("gets a single address by ID", async () => {
@@ -151,10 +155,7 @@ describe("Read Tools", () => {
   });
 
   it("lists articles with include", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [{ id: 1, name: "PLA Filament", name_de: "PLA Filament" }],
-      pagination: { totalCount: 1, page: 1, itemsPerPage: 20 },
-    });
+    mockPaginatedGet([{ id: 1, name: "PLA Filament", name_de: "PLA Filament" }]);
 
     const result = await handleReadTool(
       "openxe-list-articles",
@@ -164,16 +165,15 @@ describe("Read Tools", () => {
 
     expect(mockClient.get).toHaveBeenCalledWith("/v1/artikel", {
       include: "verkaufspreise,lagerbestand",
+      page: "1",
+      items: "100",
     });
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.data).toHaveLength(1);
+    expect(parsed).toHaveLength(1);
   });
 
-  it("lists articles with filters and pagination", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [],
-      pagination: { totalCount: 0, page: 2, itemsPerPage: 10 },
-    });
+  it("lists articles with filters (pagination handled internally)", async () => {
+    mockPaginatedGet([]);
 
     await handleReadTool(
       "openxe-list-articles",
@@ -181,11 +181,12 @@ describe("Read Tools", () => {
       mockClient as unknown as OpenXEClient
     );
 
+    // fetchFilteredList overrides page/items with its own pagination
     expect(mockClient.get).toHaveBeenCalledWith("/v1/artikel", {
       name_de: "Filament",
       typ: "produkt",
-      page: 2,
-      items: 10,
+      page: "1",
+      items: "100",
     });
   });
 
@@ -222,10 +223,7 @@ describe("Read Tools", () => {
   });
 
   it("lists categories with filters", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [{ id: 1, bezeichnung: "Filamente" }],
-      pagination: { totalCount: 1, page: 1, itemsPerPage: 20 },
-    });
+    mockPaginatedGet([{ id: 1, bezeichnung: "Filamente" }]);
 
     await handleReadTool(
       "openxe-list-categories",
@@ -236,14 +234,13 @@ describe("Read Tools", () => {
     expect(mockClient.get).toHaveBeenCalledWith("/v1/artikelkategorien", {
       bezeichnung: "Filamente",
       parent: 0,
+      page: "1",
+      items: "100",
     });
   });
 
   it("lists shipping methods", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [{ id: 1, name: "DHL Paket", bezeichnung: "DHL Paket" }],
-      pagination: undefined,
-    });
+    mockPaginatedGet([{ id: 1, name: "DHL Paket", bezeichnung: "DHL Paket" }]);
 
     const result = await handleReadTool(
       "openxe-list-shipping-methods",
@@ -251,16 +248,16 @@ describe("Read Tools", () => {
       mockClient as unknown as OpenXEClient
     );
 
-    expect(mockClient.get).toHaveBeenCalledWith("/v1/versandarten", {});
+    expect(mockClient.get).toHaveBeenCalledWith("/v1/versandarten", {
+      page: "1",
+      items: "100",
+    });
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.data[0].bezeichnung).toBe("DHL Paket");
+    expect(parsed[0].bezeichnung).toBe("DHL Paket");
   });
 
   it("lists files with filters", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [{ id: 10, objekt: "Artikel", parameter: "5" }],
-      pagination: { totalCount: 1, page: 1, itemsPerPage: 20 },
-    });
+    mockPaginatedGet([{ id: 10, objekt: "Artikel", parameter: "5" }]);
 
     await handleReadTool(
       "openxe-list-files",
@@ -271,7 +268,48 @@ describe("Read Tools", () => {
     expect(mockClient.get).toHaveBeenCalledWith("/v1/dateien", {
       objekt: "Artikel",
       parameter: "5",
+      page: "1",
+      items: "100",
     });
+  });
+
+  it("auto-paginates when DEL records are filtered out", async () => {
+    // Page 1: 3 records, 2 are DEL → only 1 survives
+    // Page 2: 2 normal records
+    mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
+      const page = parseInt(params?.page ?? "1", 10);
+      if (page === 1) {
+        return Promise.resolve({
+          data: [
+            { id: 1, name: "Good", kundennummer: "K1" },
+            { id: 2, name: "Deleted", kundennummer: "DEL-001" },
+            { id: 3, name: "Also Deleted", geloescht: "1" },
+          ],
+          pagination: { totalCount: 5, page: 1, itemsPerPage: 100 },
+        });
+      }
+      if (page === 2) {
+        return Promise.resolve({
+          data: [
+            { id: 4, name: "Also Good", kundennummer: "K2" },
+            { id: 5, name: "Third Good", kundennummer: "K3" },
+          ],
+          pagination: { totalCount: 5, page: 2, itemsPerPage: 100 },
+        });
+      }
+      return Promise.resolve({ data: [], pagination: undefined });
+    });
+
+    const result = await handleReadTool(
+      "openxe-list-addresses",
+      {},
+      mockClient as unknown as OpenXEClient
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    // Should have fetched both pages and returned all 3 non-DEL records
+    expect(parsed).toHaveLength(3);
+    expect(parsed.map((a: any) => a.id)).toEqual([1, 4, 5]);
   });
 
   it("returns error for unknown tool name", async () => {

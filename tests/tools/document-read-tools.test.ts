@@ -12,6 +12,20 @@ describe("Document Read Tools", () => {
     mockClient = { get: vi.fn() };
   });
 
+  /** Helper: mock returns data on first page, empty on subsequent pages */
+  function mockPaginatedGet(data: any[], pagination?: any) {
+    mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
+      const page = parseInt(params?.page ?? "1", 10);
+      if (page === 1) {
+        return Promise.resolve({
+          data,
+          pagination: pagination ?? { totalCount: data.length, page: 1, itemsPerPage: 100 },
+        });
+      }
+      return Promise.resolve({ data: [], pagination: undefined });
+    });
+  }
+
   it("defines all 10 expected document-read tools", () => {
     const names = DOCUMENT_READ_TOOL_DEFINITIONS.map((t) => t.name);
     expect(names).toContain("openxe-list-quotes");
@@ -28,10 +42,7 @@ describe("Document Read Tools", () => {
   });
 
   it("lists orders with filters via GET /v1/belege/auftraege", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [{ id: 1, belegnr: "AU-2026-0001" }],
-      pagination: { page: 1, pages: 1, items: 1 },
-    });
+    mockPaginatedGet([{ id: 1, belegnr: "AU-2026-0001" }]);
 
     const result = await handleDocumentReadTool(
       "openxe-list-orders",
@@ -42,11 +53,12 @@ describe("Document Read Tools", () => {
     expect(mockClient.get).toHaveBeenCalledWith("/v1/belege/auftraege", {
       kundennummer: "K1000",
       status: "freigegeben",
+      page: "1",
+      items: "100",
     });
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.data).toHaveLength(1);
     expect(parsed.data[0].belegnr).toBe("AU-2026-0001");
-    expect(parsed.pagination).toBeDefined();
   });
 
   it("gets a single invoice by ID with include", async () => {
@@ -69,10 +81,7 @@ describe("Document Read Tools", () => {
   });
 
   it("lists quotes without filters", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [],
-      pagination: { page: 1, pages: 0, items: 0 },
-    });
+    mockPaginatedGet([]);
 
     const result = await handleDocumentReadTool(
       "openxe-list-quotes",
@@ -80,7 +89,10 @@ describe("Document Read Tools", () => {
       mockClient as unknown as OpenXEClient
     );
 
-    expect(mockClient.get).toHaveBeenCalledWith("/v1/belege/angebote", {});
+    expect(mockClient.get).toHaveBeenCalledWith("/v1/belege/angebote", {
+      page: "1",
+      items: "100",
+    });
     expect(result.isError).toBeUndefined();
   });
 
@@ -101,10 +113,7 @@ describe("Document Read Tools", () => {
   });
 
   it("lists credit memos with date range filter", async () => {
-    mockClient.get.mockResolvedValue({
-      data: [{ id: 5, belegnr: "GS-2026-0001" }],
-      pagination: { page: 1, pages: 1, items: 1 },
-    });
+    mockPaginatedGet([{ id: 5, belegnr: "GS-2026-0001" }]);
 
     const result = await handleDocumentReadTool(
       "openxe-list-credit-memos",
@@ -115,6 +124,8 @@ describe("Document Read Tools", () => {
     expect(mockClient.get).toHaveBeenCalledWith("/v1/belege/gutschriften", {
       datum_gte: "2026-01-01",
       datum_lte: "2026-03-31",
+      page: "1",
+      items: "100",
     });
   });
 

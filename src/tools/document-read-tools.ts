@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
-import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted } from "../utils/field-filter.js";
+import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList } from "../utils/field-filter.js";
 
 // --- Shared schemas ---
 
@@ -68,7 +68,7 @@ const DOC_TYPES: DocType[] = [
     listName: "openxe-list-orders",
     getName: "openxe-get-order",
     path: "auftraege",
-    labelDe: "Auftr\u00e4ge",
+    labelDe: "Aufträge",
     slimKey: "order",
   },
   {
@@ -124,8 +124,6 @@ for (const dt of DOC_TYPES) {
 }
 
 // --- Helper: unwrap nested API data ---
-// The OpenXE API returns { data: { data: [...] } } through the client,
-// so result.data is { data: [...], pagination?: {...} } instead of a plain array.
 
 function unwrapList(rawData: unknown): any[] {
   if (Array.isArray(rawData)) {
@@ -159,22 +157,16 @@ export async function handleDocumentReadTool(
     if (filters.datum_gte) params.datum_gte = filters.datum_gte;
     if (filters.datum_lte) params.datum_lte = filters.datum_lte;
 
-    const result = await client.get(`/v1/belege/${listPath}`, params);
-
-    // Unwrap nested API response: API returns { data: { data: [...] } } or { data: [...] }
-    let rows = unwrapList(result.data);
-    if (!filters.include_deleted) rows = filterDeleted(rows);
-
-    // Always apply slim mode on list tools
     const slimFields = LIST_TOOL_SLIM[toolName];
-    rows = applySlimMode(rows, [...slimFields]) as Record<string, unknown>[];
+    const data = await fetchFilteredList(client, `/v1/belege/${listPath}`, params, {
+      slimFields: [...slimFields],
+      includeDeleted: filters.include_deleted,
+    });
 
-    // Truncate to MAX_LIST_RESULTS
-    const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(rows, MAX_LIST_RESULTS);
+    const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
 
     const response: Record<string, unknown> = {
       data: truncated,
-      pagination: result.pagination,
     };
     if (wasTruncated) {
       response._warning = `Ergebnis auf ${MAX_LIST_RESULTS} von ${total} Eintraegen gekuerzt. Verwende Filter um die Ergebnismenge einzuschraenken.`;
