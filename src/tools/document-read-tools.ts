@@ -17,6 +17,10 @@ const ListFilters = z.object({
     .string()
     .optional()
     .describe("Datum bis (YYYY-MM-DD), filtert datum <= Wert"),
+  include_deleted: z
+    .boolean()
+    .optional()
+    .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
 });
 
 const GetByIdInput = z.object({
@@ -96,7 +100,7 @@ export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = DOC_TYPES.flatMa
   (dt) => [
     {
       name: dt.listName,
-      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Gibt eine kompakte Liste zurueck (nur Schluesselfelder: id, belegnr, status, name, datum, summe). Fuer alle Details eines Eintrags nutze ${dt.getName}. Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte.`,
+      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Gibt eine kompakte Liste zurueck (nur Schluesselfelder: id, belegnr, status, name, datum, summe). Fuer alle Details eines Eintrags nutze ${dt.getName}. Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte. Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.`,
       inputSchema: zodToJsonSchema(ListFilters) as Record<string, unknown>,
     },
     {
@@ -159,7 +163,7 @@ export async function handleDocumentReadTool(
 
     // Unwrap nested API response: API returns { data: { data: [...] } } or { data: [...] }
     let rows = unwrapList(result.data);
-    rows = filterDeleted(rows);
+    if (!filters.include_deleted) rows = filterDeleted(rows);
 
     // Always apply slim mode on list tools
     const slimFields = LIST_TOOL_SLIM[toolName];

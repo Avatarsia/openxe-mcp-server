@@ -128,7 +128,8 @@ export function handleDiscover(args: Record<string, unknown>): ToolResult {
     lines.push(`=== ${CATEGORY_LABELS[cat]} ===`);
     for (const entry of entries) {
       const padded = entry.action.padEnd(24);
-      lines.push(`${padded}${entry.label}`);
+      const suffix = entry.action.startsWith("list-") ? " (+include_deleted)" : "";
+      lines.push(`${padded}${entry.label}${suffix}`);
     }
     lines.push("");
   }

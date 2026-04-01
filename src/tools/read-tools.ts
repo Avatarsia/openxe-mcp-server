@@ -22,6 +22,10 @@ const ListAddressesInput = z.object({
     .string()
     .optional()
     .describe("Filter by country ISO code, e.g. DE (client-side filtering -- server ignores this filter)."),
+  include_deleted: z
+    .boolean()
+    .optional()
+    .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
 });
@@ -41,6 +45,10 @@ const ListArticlesInput = z.object({
     .describe(
       "Comma-separated includes: verkaufspreise, lagerbestand, dateien, projekt. Use verkaufspreise to get prices."
     ),
+  include_deleted: z
+    .boolean()
+    .optional()
+    .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
 });
@@ -59,11 +67,19 @@ const ListCategoriesInput = z.object({
   bezeichnung: z.string().optional().describe("Filter by category name"),
   parent: z.number().int().optional().describe("Filter by parent category ID"),
   projekt: z.string().optional().describe("Filter by project"),
+  include_deleted: z
+    .boolean()
+    .optional()
+    .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
 });
 
 const ListShippingMethodsInput = z.object({
+  include_deleted: z
+    .boolean()
+    .optional()
+    .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
 });
@@ -72,6 +88,10 @@ const ListFilesInput = z.object({
   objekt: z.string().optional().describe("Filter by object type (e.g. Artikel, Adresse)"),
   parameter: z.string().optional().describe("Filter by object ID (parameter value)"),
   stichwort: z.string().optional().describe("Filter by keyword/tag"),
+  include_deleted: z
+    .boolean()
+    .optional()
+    .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
 });
@@ -113,7 +133,7 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-list-addresses",
     description:
-      "Liste aller Adressen/Kunden (GET /v1/adressen). Gibt eine kompakte Liste zurueck (nur Schluesselfelder). Fuer alle Details eines Eintrags nutze openxe-get-address. Optionale Filter: kundennummer, name, email, land. HINWEIS: Nur kundennummer wird serverseitig gefiltert; name/email/land werden clientseitig gefiltert.",
+      "Liste aller Adressen/Kunden (GET /v1/adressen). Gibt eine kompakte Liste zurueck (nur Schluesselfelder). Fuer alle Details eines Eintrags nutze openxe-get-address. Optionale Filter: kundennummer, name, email, land. HINWEIS: Nur kundennummer wird serverseitig gefiltert; name/email/land werden clientseitig gefiltert. Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.",
     inputSchema: zodToJsonSchema(ListAddressesInput) as Record<string, unknown>,
   },
   {
@@ -125,7 +145,7 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-list-articles",
     description:
-      "Liste aller Artikel (GET /v1/artikel). Gibt eine kompakte Liste zurueck (nur Schluesselfelder). Fuer alle Details eines Artikels nutze openxe-get-article. Optionale Filter: name_de, nummer, typ, projekt. Include: verkaufspreise, lagerbestand, dateien, projekt. HINWEIS: Preise nur mit include=verkaufspreise sichtbar.",
+      "Liste aller Artikel (GET /v1/artikel). Gibt eine kompakte Liste zurueck (nur Schluesselfelder). Fuer alle Details eines Artikels nutze openxe-get-article. Optionale Filter: name_de, nummer, typ, projekt. Include: verkaufspreise, lagerbestand, dateien, projekt. HINWEIS: Preise nur mit include=verkaufspreise sichtbar. Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.",
     inputSchema: zodToJsonSchema(ListArticlesInput) as Record<string, unknown>,
   },
   {
@@ -137,19 +157,19 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-list-categories",
     description:
-      "Liste aller Artikelkategorien (GET /v1/artikelkategorien). Gibt eine kompakte Liste zurueck (nur Schluesselfelder). Optionale Filter: bezeichnung, parent, projekt.",
+      "Liste aller Artikelkategorien (GET /v1/artikelkategorien). Gibt eine kompakte Liste zurueck (nur Schluesselfelder). Optionale Filter: bezeichnung, parent, projekt. Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.",
     inputSchema: zodToJsonSchema(ListCategoriesInput) as Record<string, unknown>,
   },
   {
     name: "openxe-list-shipping-methods",
     description:
-      "Liste aller Versandarten (GET /v1/versandarten). Gibt eine kompakte Liste zurueck (nur Schluesselfelder).",
+      "Liste aller Versandarten (GET /v1/versandarten). Gibt eine kompakte Liste zurueck (nur Schluesselfelder). Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.",
     inputSchema: zodToJsonSchema(ListShippingMethodsInput) as Record<string, unknown>,
   },
   {
     name: "openxe-list-files",
     description:
-      "Liste aller Dateien/Anhaenge (GET /v1/dateien). Gibt eine kompakte Liste zurueck (nur Schluesselfelder). Optionale Filter: objekt, parameter, stichwort.",
+      "Liste aller Dateien/Anhaenge (GET /v1/dateien). Gibt eine kompakte Liste zurueck (nur Schluesselfelder). Optionale Filter: objekt, parameter, stichwort. Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.",
     inputSchema: zodToJsonSchema(ListFilesInput) as Record<string, unknown>,
   },
 ];
@@ -164,7 +184,7 @@ export async function handleReadTool(
   switch (name) {
     case "openxe-list-addresses": {
       const args = ListAddressesInput.parse(input);
-      const { name: nameFilter, email, land, ...serverParams } = args;
+      const { name: nameFilter, email, land, include_deleted, ...serverParams } = args;
 
       // Only kundennummer, page, items go to the server
       const apiParams: Record<string, string | number | undefined> = {};
@@ -176,7 +196,7 @@ export async function handleReadTool(
 
       // Unwrap nested API response: API returns { data: { data: [...] } } or { data: [...] }
       let data = unwrapList(result.data) as Record<string, unknown>[];
-      data = filterDeleted(data) as Record<string, unknown>[];
+      if (!include_deleted) data = filterDeleted(data) as Record<string, unknown>[];
 
       // Client-side filtering for fields the server ignores
       if (nameFilter) {
@@ -222,7 +242,7 @@ export async function handleReadTool(
 
     case "openxe-list-articles": {
       const args = ListArticlesInput.parse(input);
-      const filterArgs = args;
+      const { include_deleted: includeDeletedArt, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.name_de) apiParams.name_de = filterArgs.name_de;
       if (filterArgs.nummer) apiParams.nummer = filterArgs.nummer;
@@ -235,7 +255,7 @@ export async function handleReadTool(
       const result = await client.get("/v1/artikel", apiParams);
       // Unwrap nested API response
       let data = unwrapList(result.data);
-      data = filterDeleted(data);
+      if (!includeDeletedArt) data = filterDeleted(data);
 
       data = applySlimMode(data, SLIM_FIELDS.article) as any[];
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
@@ -264,7 +284,7 @@ export async function handleReadTool(
 
     case "openxe-list-categories": {
       const args = ListCategoriesInput.parse(input);
-      const filterArgs = args;
+      const { include_deleted: includeDeletedCat, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.bezeichnung) apiParams.bezeichnung = filterArgs.bezeichnung;
       if (filterArgs.parent !== undefined) apiParams.parent = filterArgs.parent;
@@ -275,7 +295,7 @@ export async function handleReadTool(
       const result = await client.get("/v1/artikelkategorien", apiParams);
       // Unwrap nested API response
       let data = unwrapList(result.data);
-      data = filterDeleted(data);
+      if (!includeDeletedCat) data = filterDeleted(data);
 
       data = applySlimMode(data, SLIM_FIELDS.category) as any[];
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
@@ -291,7 +311,7 @@ export async function handleReadTool(
 
     case "openxe-list-shipping-methods": {
       const args = ListShippingMethodsInput.parse(input);
-      const filterArgs = args;
+      const { include_deleted: includeDeletedShip, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.page) apiParams.page = filterArgs.page;
       if (filterArgs.items) apiParams.items = filterArgs.items;
@@ -299,7 +319,7 @@ export async function handleReadTool(
       const result = await client.get("/v1/versandarten", apiParams);
       // Unwrap nested API response
       let data = unwrapList(result.data);
-      data = filterDeleted(data);
+      if (!includeDeletedShip) data = filterDeleted(data);
 
       data = applySlimMode(data, SLIM_FIELDS.shipping) as any[];
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
@@ -315,7 +335,7 @@ export async function handleReadTool(
 
     case "openxe-list-files": {
       const args = ListFilesInput.parse(input);
-      const filterArgs = args;
+      const { include_deleted: includeDeletedFile, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.objekt) apiParams.objekt = filterArgs.objekt;
       if (filterArgs.parameter) apiParams.parameter = filterArgs.parameter;
@@ -326,7 +346,7 @@ export async function handleReadTool(
       const result = await client.get("/v1/dateien", apiParams);
       // Unwrap nested API response
       let data = unwrapList(result.data);
-      data = filterDeleted(data);
+      if (!includeDeletedFile) data = filterDeleted(data);
 
       data = applySlimMode(data, SLIM_FIELDS.file) as any[];
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
