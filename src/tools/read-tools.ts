@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
+import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS } from "../utils/field-filter.js";
 
 // --- Input Schemas ---
 
@@ -23,6 +24,7 @@ const ListAddressesInput = z.object({
     .describe("Filter by country ISO code, e.g. DE (client-side filtering -- server ignores this filter)."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  full: z.boolean().optional().describe("Return all fields (default false = slim mode with key fields only)"),
 });
 
 const GetAddressInput = z.object({
@@ -42,6 +44,7 @@ const ListArticlesInput = z.object({
     ),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  full: z.boolean().optional().describe("Return all fields (default false = slim mode with key fields only)"),
 });
 
 const GetArticleInput = z.object({
@@ -60,11 +63,13 @@ const ListCategoriesInput = z.object({
   projekt: z.string().optional().describe("Filter by project"),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  full: z.boolean().optional().describe("Return all fields (default false = slim mode with key fields only)"),
 });
 
 const ListShippingMethodsInput = z.object({
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  full: z.boolean().optional().describe("Return all fields (default false = slim mode with key fields only)"),
 });
 
 const ListFilesInput = z.object({
@@ -73,6 +78,7 @@ const ListFilesInput = z.object({
   stichwort: z.string().optional().describe("Filter by keyword/tag"),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  full: z.boolean().optional().describe("Return all fields (default false = slim mode with key fields only)"),
 });
 
 // --- Types ---
@@ -94,7 +100,7 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-list-addresses",
     description:
-      "Liste aller Adressen/Kunden (List all addresses/customers). GET /v1/adressen. Optionale Filter: kundennummer, name, email, land. HINWEIS: Nur kundennummer wird serverseitig gefiltert; name/email/land werden clientseitig gefiltert.",
+      "Liste aller Adressen/Kunden (List all addresses/customers). GET /v1/adressen. Optionale Filter: kundennummer, name, email, land. HINWEIS: Nur kundennummer wird serverseitig gefiltert; name/email/land werden clientseitig gefiltert. Gibt standardmaessig nur Schluesselfelder zurueck. Mit full=true werden alle Felder geladen.",
     inputSchema: zodToJsonSchema(ListAddressesInput) as Record<string, unknown>,
   },
   {
@@ -106,7 +112,7 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-list-articles",
     description:
-      "Liste aller Artikel (List all articles). GET /v1/artikel. Optionale Filter: name_de, nummer, typ, projekt. Include: verkaufspreise, lagerbestand, dateien, projekt. HINWEIS: Preise nur mit include=verkaufspreise sichtbar.",
+      "Liste aller Artikel (List all articles). GET /v1/artikel. Optionale Filter: name_de, nummer, typ, projekt. Include: verkaufspreise, lagerbestand, dateien, projekt. HINWEIS: Preise nur mit include=verkaufspreise sichtbar. Gibt standardmaessig nur Schluesselfelder zurueck. Mit full=true werden alle Felder geladen.",
     inputSchema: zodToJsonSchema(ListArticlesInput) as Record<string, unknown>,
   },
   {
@@ -118,19 +124,19 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-list-categories",
     description:
-      "Liste aller Artikelkategorien (List all article categories). GET /v1/artikelkategorien. Optionale Filter: bezeichnung, parent, projekt.",
+      "Liste aller Artikelkategorien (List all article categories). GET /v1/artikelkategorien. Optionale Filter: bezeichnung, parent, projekt. Gibt standardmaessig nur Schluesselfelder zurueck. Mit full=true werden alle Felder geladen.",
     inputSchema: zodToJsonSchema(ListCategoriesInput) as Record<string, unknown>,
   },
   {
     name: "openxe-list-shipping-methods",
     description:
-      "Liste aller Versandarten (List all shipping methods). GET /v1/versandarten.",
+      "Liste aller Versandarten (List all shipping methods). GET /v1/versandarten. Gibt standardmaessig nur Schluesselfelder zurueck. Mit full=true werden alle Felder geladen.",
     inputSchema: zodToJsonSchema(ListShippingMethodsInput) as Record<string, unknown>,
   },
   {
     name: "openxe-list-files",
     description:
-      "Liste aller Dateien/Anhaenge (List all file attachments). GET /v1/dateien. Optionale Filter: objekt, parameter, stichwort.",
+      "Liste aller Dateien/Anhaenge (List all file attachments). GET /v1/dateien. Optionale Filter: objekt, parameter, stichwort. Gibt standardmaessig nur Schluesselfelder zurueck. Mit full=true werden alle Felder geladen.",
     inputSchema: zodToJsonSchema(ListFilesInput) as Record<string, unknown>,
   },
 ];
@@ -145,7 +151,7 @@ export async function handleReadTool(
   switch (name) {
     case "openxe-list-addresses": {
       const args = ListAddressesInput.parse(input);
-      const { name: nameFilter, email, land, ...serverParams } = args;
+      const { name: nameFilter, email, land, full, ...serverParams } = args;
 
       // Only kundennummer, page, items go to the server
       const apiParams: Record<string, string | number | undefined> = {};
@@ -178,12 +184,21 @@ export async function handleReadTool(
         }
       }
 
+      if (!full) {
+        data = applySlimMode(data, SLIM_FIELDS.address) as Record<string, unknown>[];
+        const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
+        data = truncated;
+        if (wasTruncated) {
+          return { content: [{ type: "text", text: `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter oder full=true fuer alle.\n\n` + JSON.stringify(data, null, 2) }] };
+        }
+      }
+
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify(
-              { data, pagination: result.pagination },
+              full ? { data, pagination: result.pagination } : { data },
               null,
               2
             ),
@@ -204,22 +219,34 @@ export async function handleReadTool(
 
     case "openxe-list-articles": {
       const args = ListArticlesInput.parse(input);
+      const { full, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
-      if (args.name_de) apiParams.name_de = args.name_de;
-      if (args.nummer) apiParams.nummer = args.nummer;
-      if (args.typ) apiParams.typ = args.typ;
-      if (args.projekt) apiParams.projekt = args.projekt;
-      if (args.include) apiParams.include = args.include;
-      if (args.page) apiParams.page = args.page;
-      if (args.items) apiParams.items = args.items;
+      if (filterArgs.name_de) apiParams.name_de = filterArgs.name_de;
+      if (filterArgs.nummer) apiParams.nummer = filterArgs.nummer;
+      if (filterArgs.typ) apiParams.typ = filterArgs.typ;
+      if (filterArgs.projekt) apiParams.projekt = filterArgs.projekt;
+      if (filterArgs.include) apiParams.include = filterArgs.include;
+      if (filterArgs.page) apiParams.page = filterArgs.page;
+      if (filterArgs.items) apiParams.items = filterArgs.items;
 
       const result = await client.get("/v1/artikel", apiParams);
+      let data = Array.isArray(result.data) ? result.data : [];
+
+      if (!full) {
+        data = applySlimMode(data, SLIM_FIELDS.article) as any[];
+        const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
+        data = truncated;
+        if (wasTruncated) {
+          return { content: [{ type: "text", text: `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter oder full=true fuer alle.\n\n` + JSON.stringify(data, null, 2) }] };
+        }
+      }
+
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify(
-              { data: result.data, pagination: result.pagination },
+              full ? { data, pagination: result.pagination } : { data },
               null,
               2
             ),
@@ -243,20 +270,32 @@ export async function handleReadTool(
 
     case "openxe-list-categories": {
       const args = ListCategoriesInput.parse(input);
+      const { full, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
-      if (args.bezeichnung) apiParams.bezeichnung = args.bezeichnung;
-      if (args.parent !== undefined) apiParams.parent = args.parent;
-      if (args.projekt) apiParams.projekt = args.projekt;
-      if (args.page) apiParams.page = args.page;
-      if (args.items) apiParams.items = args.items;
+      if (filterArgs.bezeichnung) apiParams.bezeichnung = filterArgs.bezeichnung;
+      if (filterArgs.parent !== undefined) apiParams.parent = filterArgs.parent;
+      if (filterArgs.projekt) apiParams.projekt = filterArgs.projekt;
+      if (filterArgs.page) apiParams.page = filterArgs.page;
+      if (filterArgs.items) apiParams.items = filterArgs.items;
 
       const result = await client.get("/v1/artikelkategorien", apiParams);
+      let data = Array.isArray(result.data) ? result.data : [];
+
+      if (!full) {
+        data = applySlimMode(data, SLIM_FIELDS.category) as any[];
+        const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
+        data = truncated;
+        if (wasTruncated) {
+          return { content: [{ type: "text", text: `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter oder full=true fuer alle.\n\n` + JSON.stringify(data, null, 2) }] };
+        }
+      }
+
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify(
-              { data: result.data, pagination: result.pagination },
+              full ? { data, pagination: result.pagination } : { data },
               null,
               2
             ),
@@ -267,17 +306,29 @@ export async function handleReadTool(
 
     case "openxe-list-shipping-methods": {
       const args = ListShippingMethodsInput.parse(input);
+      const { full, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
-      if (args.page) apiParams.page = args.page;
-      if (args.items) apiParams.items = args.items;
+      if (filterArgs.page) apiParams.page = filterArgs.page;
+      if (filterArgs.items) apiParams.items = filterArgs.items;
 
       const result = await client.get("/v1/versandarten", apiParams);
+      let data = Array.isArray(result.data) ? result.data : [];
+
+      if (!full) {
+        data = applySlimMode(data, SLIM_FIELDS.shipping) as any[];
+        const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
+        data = truncated;
+        if (wasTruncated) {
+          return { content: [{ type: "text", text: `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter oder full=true fuer alle.\n\n` + JSON.stringify(data, null, 2) }] };
+        }
+      }
+
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify(
-              { data: result.data, pagination: result.pagination },
+              full ? { data, pagination: result.pagination } : { data },
               null,
               2
             ),
@@ -288,20 +339,32 @@ export async function handleReadTool(
 
     case "openxe-list-files": {
       const args = ListFilesInput.parse(input);
+      const { full, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
-      if (args.objekt) apiParams.objekt = args.objekt;
-      if (args.parameter) apiParams.parameter = args.parameter;
-      if (args.stichwort) apiParams.stichwort = args.stichwort;
-      if (args.page) apiParams.page = args.page;
-      if (args.items) apiParams.items = args.items;
+      if (filterArgs.objekt) apiParams.objekt = filterArgs.objekt;
+      if (filterArgs.parameter) apiParams.parameter = filterArgs.parameter;
+      if (filterArgs.stichwort) apiParams.stichwort = filterArgs.stichwort;
+      if (filterArgs.page) apiParams.page = filterArgs.page;
+      if (filterArgs.items) apiParams.items = filterArgs.items;
 
       const result = await client.get("/v1/dateien", apiParams);
+      let data = Array.isArray(result.data) ? result.data : [];
+
+      if (!full) {
+        data = applySlimMode(data, SLIM_FIELDS.file) as any[];
+        const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
+        data = truncated;
+        if (wasTruncated) {
+          return { content: [{ type: "text", text: `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter oder full=true fuer alle.\n\n` + JSON.stringify(data, null, 2) }] };
+        }
+      }
+
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify(
-              { data: result.data, pagination: result.pagination },
+              full ? { data, pagination: result.pagination } : { data },
               null,
               2
             ),
