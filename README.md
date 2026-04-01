@@ -213,6 +213,8 @@ Dein KI-Assistent waehlt automatisch die passenden Tools und Resources aus.
 - **Testinstanz:** Teste neue Workflows zuerst auf einer Testinstanz
 - **API-Berechtigungen:** Der API-Benutzer hat vollen Zugriff -- schraenke ihn bei Bedarf ein
 - **Keine Loesch-Operationen:** Der Server unterstuetzt bewusst keine Loesch-Operationen, um versehentlichen Datenverlust zu vermeiden
+- **Datei-Upload braucht x-www-form-urlencoded:** Der Endpoint POST /v1/dateien akzeptiert kein JSON. Felder: dateiname, titel, file_content (base64-encoded). Download via /v1/dateien/{id}/base64 oder /download.
+- **Tracking braucht verknuepften Lieferschein:** Der Lieferschein muss mit einem Auftrag verknuepft sein, sonst Fehler "Order not found". Pflichtfelder: tracking, lieferschein (Belegnummer als String, nicht ID), gewicht, anzahlpakete, versendet_am (YYYY-MM-DD).
 
 ## Projektstruktur
 
