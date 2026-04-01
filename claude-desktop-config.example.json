@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "openxe": {
+      "command": "npx",
+      "args": ["tsx", "/path/to/mcp-server/src/index.ts"],
+      "env": {
+        "OPENXE_URL": "http://your-openxe-host",
+        "OPENXE_USERNAME": "your-api-username",
+        "OPENXE_PASSWORD": "your-api-password",
+        "OPENXE_API_PATH": "/api/index.php"
+      }
+    }
+  }
+}
