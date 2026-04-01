@@ -35,7 +35,7 @@ export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-create-delivery-address",
     description:
-      "Create a delivery address for a customer. Uses REST v1 (full CRUD works). Required: name, adresse (parent address ID). Optional: typ, strasse, plz, ort, land (2-char ISO), standardlieferadresse (0/1), ust_befreit (0-3).",
+      "Create a delivery address for a customer. Tries REST v1, falls back to Legacy API (REST v1 has a known PHP 8.1 Fatal Error). Required: name, adresse (parent address ID). Optional: typ, strasse, plz, ort, land (2-char ISO), standardlieferadresse (0/1), ust_befreit (0-3).",
     inputSchema: zodToJsonSchema(DeliveryAddressCreateInput) as Record<
       string,
       unknown
@@ -132,15 +132,37 @@ export async function handleAddressTool(
 
     case "openxe-create-delivery-address": {
       const input = DeliveryAddressCreateInput.parse(args);
-      const result = await client.post("/v1/lieferadressen", input);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result.data, null, 2),
-          },
-        ],
-      };
+      try {
+        // Try REST v1 first
+        const result = await client.post("/v1/lieferadressen", input);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result.data, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        // Fallback to Legacy API (REST v1 has PHP 8.1 Fatal Error on DeliveryAddressResource)
+        const result = await client.legacyPost("LieferadresseCreate", input);
+        const data =
+          typeof result.data === "object" && result.data !== null
+            ? result.data
+            : {};
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                { ...data, _method: "legacy-fallback" },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
     }
 
     case "openxe-edit-delivery-address": {
