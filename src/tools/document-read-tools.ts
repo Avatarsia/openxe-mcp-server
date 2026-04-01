@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
-import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS } from "../utils/field-filter.js";
+import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted } from "../utils/field-filter.js";
 
 // --- Shared schemas ---
 
@@ -159,6 +159,7 @@ export async function handleDocumentReadTool(
 
     // Unwrap nested API response: API returns { data: { data: [...] } } or { data: [...] }
     let rows = unwrapList(result.data);
+    rows = filterDeleted(rows);
 
     // Always apply slim mode on list tools
     const slimFields = LIST_TOOL_SLIM[toolName];

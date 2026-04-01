@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
-import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS } from "../utils/field-filter.js";
+import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted } from "../utils/field-filter.js";
 
 // --- Input Schemas ---
 
@@ -176,6 +176,7 @@ export async function handleReadTool(
 
       // Unwrap nested API response: API returns { data: { data: [...] } } or { data: [...] }
       let data = unwrapList(result.data) as Record<string, unknown>[];
+      data = filterDeleted(data) as Record<string, unknown>[];
 
       // Client-side filtering for fields the server ignores
       if (nameFilter) {
@@ -234,6 +235,7 @@ export async function handleReadTool(
       const result = await client.get("/v1/artikel", apiParams);
       // Unwrap nested API response
       let data = unwrapList(result.data);
+      data = filterDeleted(data);
 
       data = applySlimMode(data, SLIM_FIELDS.article) as any[];
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
@@ -273,6 +275,7 @@ export async function handleReadTool(
       const result = await client.get("/v1/artikelkategorien", apiParams);
       // Unwrap nested API response
       let data = unwrapList(result.data);
+      data = filterDeleted(data);
 
       data = applySlimMode(data, SLIM_FIELDS.category) as any[];
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
@@ -296,6 +299,7 @@ export async function handleReadTool(
       const result = await client.get("/v1/versandarten", apiParams);
       // Unwrap nested API response
       let data = unwrapList(result.data);
+      data = filterDeleted(data);
 
       data = applySlimMode(data, SLIM_FIELDS.shipping) as any[];
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
@@ -322,6 +326,7 @@ export async function handleReadTool(
       const result = await client.get("/v1/dateien", apiParams);
       // Unwrap nested API response
       let data = unwrapList(result.data);
+      data = filterDeleted(data);
 
       data = applySlimMode(data, SLIM_FIELDS.file) as any[];
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);

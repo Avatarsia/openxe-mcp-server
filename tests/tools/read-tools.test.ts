@@ -152,7 +152,7 @@ describe("Read Tools", () => {
 
   it("lists articles with include", async () => {
     mockClient.get.mockResolvedValue({
-      data: [{ id: 1, name_de: "PLA Filament" }],
+      data: [{ id: 1, name: "PLA Filament", name_de: "PLA Filament" }],
       pagination: { totalCount: 1, page: 1, itemsPerPage: 20 },
     });
 
@@ -241,7 +241,7 @@ describe("Read Tools", () => {
 
   it("lists shipping methods", async () => {
     mockClient.get.mockResolvedValue({
-      data: [{ id: 1, bezeichnung: "DHL Paket" }],
+      data: [{ id: 1, name: "DHL Paket", bezeichnung: "DHL Paket" }],
       pagination: undefined,
     });
 

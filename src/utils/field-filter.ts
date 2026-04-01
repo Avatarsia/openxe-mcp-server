@@ -1,3 +1,17 @@
+export function filterDeleted(records: any[]): any[] {
+  return records.filter(r => {
+    // Skip if geloescht = 1 or "1"
+    if (String(r.geloescht || "0") === "1") return false;
+    // Skip if kundennummer starts with "DEL"
+    if (String(r.kundennummer || "").startsWith("DEL")) return false;
+    // Skip if belegnr starts with "DEL"
+    if (String(r.belegnr || "").startsWith("DEL")) return false;
+    // Skip if name is empty AND kundennummer is empty (ghost records)
+    if (!r.name && !r.kundennummer && !r.belegnr) return false;
+    return true;
+  });
+}
+
 /**
  * Slim-mode utilities for list endpoints.
  *
