@@ -17,11 +17,6 @@ const ListFilters = z.object({
     .string()
     .optional()
     .describe("Datum bis (YYYY-MM-DD), filtert datum <= Wert"),
-  full: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe("Wenn true, alle Felder zurueckgeben; Standard: nur Schluesselfelder"),
 });
 
 const GetByIdInput = z.object({
@@ -101,12 +96,12 @@ export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = DOC_TYPES.flatMa
   (dt) => [
     {
       name: dt.listName,
-      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Gibt standardmaessig nur Schluesselfelder zurueck (id, belegnr, status, name, datum, summe). Mit full=true alle Felder. Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte.`,
+      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Gibt eine kompakte Liste zurueck (nur Schluesselfelder: id, belegnr, status, name, datum, summe). Fuer alle Details eines Eintrags nutze ${dt.getName}. Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte.`,
       inputSchema: zodToJsonSchema(ListFilters) as Record<string, unknown>,
     },
     {
       name: dt.getName,
-      description: `Einzelnes Dokument aus ${dt.labelDe} abrufen (GET /v1/belege/${dt.path}/{id}). Optional: include (z.B. 'positionen,protokoll').`,
+      description: `Einzelnes Dokument aus ${dt.labelDe} abrufen (GET /v1/belege/${dt.path}/{id}). Gibt ALLE Felder eines einzelnen Datensatzes zurueck. Optional: include (z.B. 'positionen,protokoll').`,
       inputSchema: zodToJsonSchema(GetByIdInput) as Record<string, unknown>,
     },
   ]
@@ -146,11 +141,9 @@ export async function handleDocumentReadTool(
 
     let rows = Array.isArray(result.data) ? result.data : [result.data];
 
-    // Apply slim mode unless full=true
-    if (!filters.full) {
-      const slimFields = LIST_TOOL_SLIM[toolName];
-      rows = applySlimMode(rows, [...slimFields]) as Record<string, unknown>[];
-    }
+    // Always apply slim mode on list tools
+    const slimFields = LIST_TOOL_SLIM[toolName];
+    rows = applySlimMode(rows, [...slimFields]) as Record<string, unknown>[];
 
     // Truncate to MAX_LIST_RESULTS
     const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(rows, MAX_LIST_RESULTS);
