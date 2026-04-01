@@ -93,6 +93,85 @@ describe("Document Tools", () => {
     expect(parsed.base64).toBe(fakePdf.toString("base64"));
   });
 
+  it("releases order via flat JSON (no wrapper key)", async () => {
+    mockClient.legacyPost.mockResolvedValue({ success: true });
+
+    await handleDocumentTool(
+      "openxe-release-order",
+      { id: 10 },
+      mockClient as unknown as OpenXEClient
+    );
+
+    // Freigabe endpoints expect flat {id: N}, NOT {auftrag: {id: N}}
+    expect(mockClient.legacyPost).toHaveBeenCalledWith("AuftragFreigabe", {
+      id: 10,
+    });
+  });
+
+  it("releases invoice via flat JSON (no wrapper key)", async () => {
+    mockClient.legacyPost.mockResolvedValue({ success: true });
+
+    await handleDocumentTool(
+      "openxe-release-invoice",
+      { id: 20 },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(mockClient.legacyPost).toHaveBeenCalledWith("RechnungFreigabe", {
+      id: 20,
+    });
+  });
+
+  it("marks invoice paid via flat JSON (no wrapper key)", async () => {
+    mockClient.legacyPost.mockResolvedValue({ success: true });
+
+    await handleDocumentTool(
+      "openxe-mark-invoice-paid",
+      { id: 30 },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(mockClient.legacyPost).toHaveBeenCalledWith(
+      "RechnungAlsBezahltMarkieren",
+      { id: 30 }
+    );
+  });
+
+  it("converts quote to order via flat JSON (no wrapper key)", async () => {
+    mockClient.legacyPost.mockResolvedValue({
+      success: true,
+      data: { id: 200 },
+    });
+
+    await handleDocumentTool(
+      "openxe-convert-quote-to-order",
+      { id: 5 },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(mockClient.legacyPost).toHaveBeenCalledWith("AngebotZuAuftrag", {
+      id: 5,
+    });
+  });
+
+  it("converts order to invoice via flat JSON (no wrapper key)", async () => {
+    mockClient.legacyPost.mockResolvedValue({
+      success: true,
+      data: { id: 300 },
+    });
+
+    await handleDocumentTool(
+      "openxe-convert-order-to-invoice",
+      { id: 7 },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(mockClient.legacyPost).toHaveBeenCalledWith(
+      "WeiterfuehrenAuftragZuRechnung",
+      { id: 7 }
+    );
+  });
+
   it("gets document PDF for angebot typ", async () => {
     const fakePdf = Buffer.from("%PDF-1.4 angebot");
     mockClient.getRaw.mockResolvedValue({

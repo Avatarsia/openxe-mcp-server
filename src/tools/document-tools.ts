@@ -119,11 +119,11 @@ const LEGACY_WRAPPER_KEY: Record<string, string | null> = {
   "openxe-create-quote": "angebot",
   "openxe-create-invoice": "rechnung",
   "openxe-create-credit-note": "gutschrift",
-  "openxe-convert-quote-to-order": "angebot",
-  "openxe-convert-order-to-invoice": "auftrag",
-  "openxe-release-order": "auftrag",
-  "openxe-release-invoice": "rechnung",
-  "openxe-mark-invoice-paid": "rechnung",
+  "openxe-convert-quote-to-order": null,
+  "openxe-convert-order-to-invoice": null,
+  "openxe-release-order": null,
+  "openxe-release-invoice": null,
+  "openxe-mark-invoice-paid": null,
 };
 
 const SCHEMA_MAP: Record<string, z.ZodSchema> = {

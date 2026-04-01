@@ -22,10 +22,11 @@ const SubscriptionEditInput = z
   .catchall(z.unknown());
 
 const CrmDocumentCreateInput = z.object({
-  adresse: z.number().int().positive().describe("Address ID"),
-  typ: z.enum(["notiz", "email", "telefonat"]).describe("Document type"),
+  adresse_from: z.number().int().positive().describe("Sender address ID"),
+  adresse_to: z.number().int().positive().optional().describe("Recipient address ID"),
+  typ: z.enum(["email", "brief", "telefon", "notiz"]).describe("Document type"),
   betreff: z.string().describe("Subject"),
-  inhalt: z.string().optional().describe("Content/body"),
+  content: z.string().optional().describe("Content/body"),
   datum: z.string().optional().describe("Date YYYY-MM-DD"),
   projekt: z.number().int().optional().describe("Project ID"),
 });
@@ -41,17 +42,15 @@ const TrackingCreateInput = z.object({
 });
 
 const ResubmissionCreateInput = z.object({
-  betreff: z.string().describe("Subject"),
-  faellig_am: DateString.describe("Due date YYYY-MM-DD"),
-  beschreibung: z.string().optional().describe("Description"),
+  bezeichnung: z.string().min(3).describe("Title (min 3 chars)"),
+  datum_erinnerung: DateString.describe("Reminder date YYYY-MM-DD"),
+  zeit_erinnerung: z.string().regex(/^\d{2}:\d{2}:\d{2}$/).describe("Reminder time HH:mm:ss"),
+  prio: z.number().int().min(0).max(1).optional().describe("Priority (0 or 1)"),
   adresse: z.number().int().optional().describe("Related address ID"),
+  projekt: z.number().int().optional().describe("Related project ID"),
+  beschreibung: z.string().optional().describe("Description"),
   bearbeiter: z.string().optional().describe("Assigned user"),
-  prioritaet: z
-    .enum(["niedrig", "normal", "hoch", "dringend"])
-    .optional()
-    .describe("Priority"),
-  modul: z.string().optional().describe("Related module"),
-  parameter: z.number().int().optional().describe("Related entity ID"),
+  adresse_mitarbeiter: z.number().int().optional().describe("Employee address ID"),
 });
 
 const FileUploadInput = z.object({
@@ -106,7 +105,7 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-create-crm-document",
     description:
-      "Create a CRM document (note, email log, or call log). Required: adresse, typ, betreff.",
+      "Create a CRM document (note, email log, call log, or letter). Required: adresse_from, typ (email/brief/telefon/notiz), betreff.",
     inputSchema: zodToJsonSchema(CrmDocumentCreateInput) as Record<
       string,
       unknown
@@ -124,7 +123,7 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-create-resubmission",
     description:
-      "Create a task/reminder with due date. Required: betreff, faellig_am.",
+      "Create a task/reminder with due date. Required: bezeichnung (min 3 chars), datum_erinnerung (YYYY-MM-DD), zeit_erinnerung (HH:mm:ss).",
     inputSchema: zodToJsonSchema(ResubmissionCreateInput) as Record<
       string,
       unknown
@@ -186,7 +185,7 @@ export async function handleSubscriptionTool(
     }
     case "openxe-create-crm-document": {
       const input = CrmDocumentCreateInput.parse(args);
-      const result = await client.post("/v1/crm_dokumente", input);
+      const result = await client.post("/v1/crmdokumente", input);
       return {
         content: [
           { type: "text", text: JSON.stringify(result.data, null, 2) },
