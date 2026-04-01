@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
-import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList } from "../utils/field-filter.js";
+import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList, FilteredListResult } from "../utils/field-filter.js";
 
 // --- Input Schemas ---
 
@@ -156,6 +156,27 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
   },
 ];
 
+// --- Helper: build list response with metadata wrapper ---
+
+function buildListResponse(result: FilteredListResult, hint: string): ToolResult {
+  const response: Record<string, unknown> = {};
+
+  // Build info string
+  let info = `${result.meta.returned} Ergebnisse`;
+  if (result.meta.filtered_out > 0) {
+    info += ` (${result.meta.filtered_out} geloeschte ausgeblendet). Fuer alle: include_deleted=true`;
+  }
+  if (result.meta.truncated) {
+    info += ` — Liste gekuerzt, es gibt weitere Eintraege. Nutze Filter zum Eingrenzen.`;
+  }
+
+  response._info = info;
+  response._hint = hint;
+  response.data = result.data;
+
+  return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
+}
+
 // --- Handler ---
 
 export async function handleReadTool(
@@ -172,14 +193,15 @@ export async function handleReadTool(
       const apiParams: Record<string, string | number | undefined> = {};
       if (serverParams.kundennummer) apiParams.kundennummer = serverParams.kundennummer;
 
-      let data = await fetchFilteredList(client, "/v1/adressen", apiParams, {
+      const result = await fetchFilteredList(client, "/v1/adressen", apiParams, {
         includeDeleted: include_deleted,
       });
 
       // Client-side filters (name, email, land)
+      let filtered = result.data;
       if (nameFilter) {
         const lowerFilter = nameFilter.toLowerCase();
-        data = data.filter((a: any) => {
+        filtered = filtered.filter((a: any) => {
           const n = String(a.name ?? "").toLowerCase();
           const fn = String(a.firma ?? "").toLowerCase();
           return n.includes(lowerFilter) || fn.includes(lowerFilter);
@@ -187,24 +209,24 @@ export async function handleReadTool(
       }
       if (email) {
         const lowerEmail = email.toLowerCase();
-        data = data.filter((a: any) =>
+        filtered = filtered.filter((a: any) =>
           String(a.email ?? "").toLowerCase().includes(lowerEmail)
         );
       }
       if (land) {
         const upperLand = land.toUpperCase();
-        data = data.filter((a: any) => String(a.land ?? "").toUpperCase() === upperLand);
+        filtered = filtered.filter((a: any) => String(a.land ?? "").toUpperCase() === upperLand);
       }
 
-      const slimmed = applySlimMode(data, [...SLIM_FIELDS.address]) as Record<string, unknown>[];
-      const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(slimmed, MAX_LIST_RESULTS);
+      const slimmed = applySlimMode(filtered, [...SLIM_FIELDS.address]) as Record<string, unknown>[];
+      const { data: truncated, truncated: wasTruncated } = truncateWithWarning(slimmed, MAX_LIST_RESULTS);
 
-      let text = JSON.stringify(truncated, null, 2);
-      if (wasTruncated) {
-        text = `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter um die Ergebnismenge einzuschraenken. Fuer alle Details eines Eintrags nutze openxe-get-address.\n\n` + text;
-      }
+      // Update meta to reflect client-side filtering and truncation
+      result.data = truncated;
+      result.meta.returned = truncated.length;
+      result.meta.truncated = wasTruncated || result.meta.truncated;
 
-      return { content: [{ type: "text", text }] };
+      return buildListResponse(result, "Fuer alle Details eines Eintrags nutze openxe-get-address mit der ID.");
     }
 
     case "openxe-get-address": {
@@ -227,18 +249,12 @@ export async function handleReadTool(
       if (filterArgs.projekt) apiParams.projekt = filterArgs.projekt;
       if (filterArgs.include) apiParams.include = filterArgs.include;
 
-      const data = await fetchFilteredList(client, "/v1/artikel", apiParams, {
+      const result = await fetchFilteredList(client, "/v1/artikel", apiParams, {
         slimFields: SLIM_FIELDS.article,
         includeDeleted: includeDeletedArt,
       });
-      const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
 
-      let text = JSON.stringify(truncated, null, 2);
-      if (wasTruncated) {
-        text = `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter um die Ergebnismenge einzuschraenken. Fuer alle Details eines Artikels nutze openxe-get-article.\n\n` + text;
-      }
-
-      return { content: [{ type: "text", text }] };
+      return buildListResponse(result, "Fuer alle Details eines Artikels nutze openxe-get-article mit der ID.");
     }
 
     case "openxe-get-article": {
@@ -262,36 +278,24 @@ export async function handleReadTool(
       if (filterArgs.parent !== undefined) apiParams.parent = filterArgs.parent;
       if (filterArgs.projekt) apiParams.projekt = filterArgs.projekt;
 
-      const data = await fetchFilteredList(client, "/v1/artikelkategorien", apiParams, {
+      const result = await fetchFilteredList(client, "/v1/artikelkategorien", apiParams, {
         slimFields: SLIM_FIELDS.category,
         includeDeleted: includeDeletedCat,
       });
-      const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
 
-      let text = JSON.stringify(truncated, null, 2);
-      if (wasTruncated) {
-        text = `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter um die Ergebnismenge einzuschraenken.\n\n` + text;
-      }
-
-      return { content: [{ type: "text", text }] };
+      return buildListResponse(result, "Fuer Details einer Kategorie nutze die jeweilige Kategorie-ID.");
     }
 
     case "openxe-list-shipping-methods": {
       const args = ListShippingMethodsInput.parse(input);
       const { include_deleted: includeDeletedShip, page: _p, items: _i } = args;
 
-      const data = await fetchFilteredList(client, "/v1/versandarten", {}, {
+      const result = await fetchFilteredList(client, "/v1/versandarten", {}, {
         slimFields: SLIM_FIELDS.shippingMethod,
         includeDeleted: includeDeletedShip,
       });
-      const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
 
-      let text = JSON.stringify(truncated, null, 2);
-      if (wasTruncated) {
-        text = `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter um die Ergebnismenge einzuschraenken.\n\n` + text;
-      }
-
-      return { content: [{ type: "text", text }] };
+      return buildListResponse(result, "Versandarten-Liste. Nutze die ID fuer Zuordnungen.");
     }
 
     case "openxe-list-files": {
@@ -302,18 +306,12 @@ export async function handleReadTool(
       if (filterArgs.parameter) apiParams.parameter = filterArgs.parameter;
       if (filterArgs.stichwort) apiParams.stichwort = filterArgs.stichwort;
 
-      const data = await fetchFilteredList(client, "/v1/dateien", apiParams, {
+      const result = await fetchFilteredList(client, "/v1/dateien", apiParams, {
         slimFields: SLIM_FIELDS.file,
         includeDeleted: includeDeletedFile,
       });
-      const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
 
-      let text = JSON.stringify(truncated, null, 2);
-      if (wasTruncated) {
-        text = `Zeige ${truncated.length} von ${total} Ergebnissen. Nutze Filter um die Ergebnismenge einzuschraenken.\n\n` + text;
-      }
-
-      return { content: [{ type: "text", text }] };
+      return buildListResponse(result, "Datei-Liste. Nutze die ID fuer weitere Operationen.");
     }
 
     default:

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
-import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList } from "../utils/field-filter.js";
+import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList, FilteredListResult } from "../utils/field-filter.js";
 
 // --- Shared schemas ---
 
@@ -54,6 +54,7 @@ interface DocType {
   path: string;
   labelDe: string;
   slimKey: keyof typeof SLIM_FIELDS;
+  hintDe: string;
 }
 
 const DOC_TYPES: DocType[] = [
@@ -63,6 +64,7 @@ const DOC_TYPES: DocType[] = [
     path: "angebote",
     labelDe: "Angebote",
     slimKey: "quote",
+    hintDe: "Fuer Details nutze openxe-get-quote mit der ID.",
   },
   {
     listName: "openxe-list-orders",
@@ -70,6 +72,7 @@ const DOC_TYPES: DocType[] = [
     path: "auftraege",
     labelDe: "Aufträge",
     slimKey: "order",
+    hintDe: "Fuer Details nutze openxe-get-order mit der ID.",
   },
   {
     listName: "openxe-list-invoices",
@@ -77,6 +80,7 @@ const DOC_TYPES: DocType[] = [
     path: "rechnungen",
     labelDe: "Rechnungen",
     slimKey: "invoice",
+    hintDe: "Fuer Details nutze openxe-get-invoice mit der ID.",
   },
   {
     listName: "openxe-list-delivery-notes",
@@ -84,6 +88,7 @@ const DOC_TYPES: DocType[] = [
     path: "lieferscheine",
     labelDe: "Lieferscheine",
     slimKey: "deliveryNote",
+    hintDe: "Fuer Details nutze openxe-get-delivery-note mit der ID.",
   },
   {
     listName: "openxe-list-credit-memos",
@@ -91,6 +96,7 @@ const DOC_TYPES: DocType[] = [
     path: "gutschriften",
     labelDe: "Gutschriften",
     slimKey: "creditMemo",
+    hintDe: "Fuer Details nutze openxe-get-credit-memo mit der ID.",
   },
 ];
 
@@ -115,11 +121,13 @@ export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = DOC_TYPES.flatMa
 
 const LIST_TOOL_PATH: Record<string, string> = {};
 const LIST_TOOL_SLIM: Record<string, readonly string[]> = {};
+const LIST_TOOL_HINT: Record<string, string> = {};
 const GET_TOOL_PATH: Record<string, string> = {};
 
 for (const dt of DOC_TYPES) {
   LIST_TOOL_PATH[dt.listName] = dt.path;
   LIST_TOOL_SLIM[dt.listName] = SLIM_FIELDS[dt.slimKey];
+  LIST_TOOL_HINT[dt.listName] = dt.hintDe;
   GET_TOOL_PATH[dt.getName] = dt.path;
 }
 
@@ -158,19 +166,25 @@ export async function handleDocumentReadTool(
     if (filters.datum_lte) params.datum_lte = filters.datum_lte;
 
     const slimFields = LIST_TOOL_SLIM[toolName];
-    const data = await fetchFilteredList(client, `/v1/belege/${listPath}`, params, {
+    const result = await fetchFilteredList(client, `/v1/belege/${listPath}`, params, {
       slimFields: [...slimFields],
       includeDeleted: filters.include_deleted,
     });
 
-    const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
+    // Build info string
+    let info = `${result.meta.returned} Ergebnisse`;
+    if (result.meta.filtered_out > 0) {
+      info += ` (${result.meta.filtered_out} geloeschte ausgeblendet). Fuer alle: include_deleted=true`;
+    }
+    if (result.meta.truncated) {
+      info += ` — Liste gekuerzt, es gibt weitere Eintraege. Nutze Filter zum Eingrenzen.`;
+    }
 
     const response: Record<string, unknown> = {
-      data: truncated,
+      _info: info,
+      _hint: LIST_TOOL_HINT[toolName],
+      data: result.data,
     };
-    if (wasTruncated) {
-      response._warning = `Ergebnis auf ${MAX_LIST_RESULTS} von ${total} Eintraegen gekuerzt. Verwende Filter um die Ergebnismenge einzuschraenken.`;
-    }
 
     return {
       content: [

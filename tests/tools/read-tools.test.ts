@@ -50,7 +50,7 @@ describe("Read Tools", () => {
     }
   });
 
-  it("lists addresses with no filters", async () => {
+  it("lists addresses with no filters and returns metadata wrapper", async () => {
     mockPaginatedGet([{ id: 1, name: "Acme" }]);
 
     const result = await handleReadTool(
@@ -65,8 +65,10 @@ describe("Read Tools", () => {
     });
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0].name).toBe("Acme");
+    expect(parsed._info).toContain("1 Ergebnisse");
+    expect(parsed._hint).toContain("openxe-get-address");
+    expect(parsed.data).toHaveLength(1);
+    expect(parsed.data[0].name).toBe("Acme");
   });
 
   it("lists addresses with kundennummer (server-side filter)", async () => {
@@ -99,8 +101,8 @@ describe("Read Tools", () => {
     );
 
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed).toHaveLength(2);
-    expect(parsed.map((a: any) => a.id)).toEqual([1, 3]);
+    expect(parsed.data).toHaveLength(2);
+    expect(parsed.data.map((a: any) => a.id)).toEqual([1, 3]);
   });
 
   it("filters addresses by email client-side", async () => {
@@ -116,8 +118,8 @@ describe("Read Tools", () => {
     );
 
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0].id).toBe(1);
+    expect(parsed.data).toHaveLength(1);
+    expect(parsed.data[0].id).toBe(1);
   });
 
   it("filters addresses by land client-side", async () => {
@@ -133,8 +135,8 @@ describe("Read Tools", () => {
     );
 
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0].land).toBe("DE");
+    expect(parsed.data).toHaveLength(1);
+    expect(parsed.data[0].land).toBe("DE");
   });
 
   it("gets a single address by ID", async () => {
@@ -169,7 +171,7 @@ describe("Read Tools", () => {
       items: "100",
     });
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed).toHaveLength(1);
+    expect(parsed.data).toHaveLength(1);
   });
 
   it("lists articles with filters (pagination handled internally)", async () => {
@@ -253,7 +255,7 @@ describe("Read Tools", () => {
       items: "100",
     });
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed[0].bezeichnung).toBe("DHL Paket");
+    expect(parsed.data[0].bezeichnung).toBe("DHL Paket");
   });
 
   it("lists files with filters", async () => {
@@ -274,7 +276,7 @@ describe("Read Tools", () => {
   });
 
   it("auto-paginates when DEL records are filtered out", async () => {
-    // Page 1: 3 records, 2 are DEL → only 1 survives
+    // Page 1: 3 records, 2 are DEL -> only 1 survives
     // Page 2: 2 normal records
     mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
       const page = parseInt(params?.page ?? "1", 10);
@@ -308,8 +310,10 @@ describe("Read Tools", () => {
 
     const parsed = JSON.parse(result.content[0].text);
     // Should have fetched both pages and returned all 3 non-DEL records
-    expect(parsed).toHaveLength(3);
-    expect(parsed.map((a: any) => a.id)).toEqual([1, 4, 5]);
+    expect(parsed.data).toHaveLength(3);
+    expect(parsed.data.map((a: any) => a.id)).toEqual([1, 4, 5]);
+    // Should report filtered-out DEL records in _info
+    expect(parsed._info).toContain("geloeschte ausgeblendet");
   });
 
   it("returns error for unknown tool name", async () => {

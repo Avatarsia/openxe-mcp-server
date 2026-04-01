@@ -57,6 +57,8 @@ describe("Document Read Tools", () => {
       items: "100",
     });
     const parsed = JSON.parse(result.content[0].text);
+    expect(parsed._info).toContain("1 Ergebnisse");
+    expect(parsed._hint).toContain("openxe-get-order");
     expect(parsed.data).toHaveLength(1);
     expect(parsed.data[0].belegnr).toBe("AU-2026-0001");
   });

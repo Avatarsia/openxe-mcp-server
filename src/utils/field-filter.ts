@@ -1,5 +1,15 @@
 import { OpenXEClient } from "../client/openxe-client.js";
 
+export interface FilteredListResult {
+  data: any[];
+  meta: {
+    total_from_api: number;    // total records fetched from API
+    filtered_out: number;       // records removed by DEL filter
+    returned: number;           // records in this response
+    truncated: boolean;         // true if more exist than returned
+  };
+}
+
 export async function fetchFilteredList(
   client: OpenXEClient,
   path: string,
@@ -9,13 +19,14 @@ export async function fetchFilteredList(
     includeDeleted?: boolean;
     maxResults?: number;
   } = {}
-): Promise<any[]> {
+): Promise<FilteredListResult> {
   const { slimFields, includeDeleted = false, maxResults = MAX_LIST_RESULTS } = options;
 
   let allRecords: any[] = [];
   let page = 1;
   const pageSize = 100; // fetch in large chunks to minimize API calls
   let totalFetched = 0;
+  let totalFilteredOut = 0;
   const maxPages = 10; // safety limit
 
   while (allRecords.length < maxResults && page <= maxPages) {
@@ -38,7 +49,9 @@ export async function fetchFilteredList(
 
     // Apply DEL filter
     if (!includeDeleted) {
+      const beforeCount = list.length;
       list = filterDeleted(list);
+      totalFilteredOut += beforeCount - list.length;
     }
 
     allRecords = allRecords.concat(list);
@@ -55,15 +68,23 @@ export async function fetchFilteredList(
   }
 
   // Truncate to maxResults
-  const { data: truncated } = truncateWithWarning(allRecords, maxResults);
+  const { data: truncated, truncated: wasTruncated } = truncateWithWarning(allRecords, maxResults);
 
   // Apply slim
-  let result = truncated;
+  let finalData = truncated;
   if (slimFields) {
-    result = applySlimMode(result, [...slimFields]) as any[];
+    finalData = applySlimMode(finalData, [...slimFields]) as any[];
   }
 
-  return result;
+  return {
+    data: finalData,
+    meta: {
+      total_from_api: totalFetched,
+      filtered_out: totalFilteredOut,
+      returned: finalData.length,
+      truncated: wasTruncated,
+    },
+  };
 }
 
 export function filterDeleted(records: any[]): any[] {
