@@ -55,12 +55,13 @@ const ResubmissionCreateInput = z.object({
 });
 
 const FileUploadInput = z.object({
-  filename: z.string().describe("File name"),
-  content_base64: z.string().describe("Base64-encoded file content"),
-  objekt: z.string().describe("Object type: Artikel, Adresse, Auftrag, etc."),
-  parameter: z.number().int().describe("Object ID"),
-  titel: z.string().optional().describe("File title"),
-  beschreibung: z.string().optional().describe("File description"),
+  dateiname: z.string().describe("Dateiname mit Endung (z.B. 'rechnung.pdf')"),
+  titel: z.string().describe("Titel/Beschreibung der Datei"),
+  file_content: z.string().describe("Dateiinhalt als Base64-String"),
+  beschreibung: z.string().optional().describe("Optionale Beschreibung"),
+  objekt_typ: z.string().describe("Objekttyp dem die Datei zugeordnet wird: auftrag, rechnung, lieferschein, angebot, gutschrift, artikel, adresse, bestellung, projekt"),
+  objekt_id: z.string().describe("ID des Objekts (z.B. '1' fuer Auftrag mit ID 1)"),
+  stichwort: z.string().optional().default("Anlage").describe("Stichwort/Kategorie (Standard: 'Anlage')"),
 });
 
 const ServerTimeInput = z.object({}).describe("No parameters required");
@@ -132,7 +133,7 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-upload-file",
     description:
-      "Upload a file attached to an object (article, address, order, etc.). Required: filename, content_base64, objekt, parameter.",
+      "Datei hochladen und einem Objekt zuordnen (Auftrag, Rechnung, Kunde, Artikel, etc.). Die Datei erscheint im OpenXE UI unter dem zugeordneten Objekt im Tab 'Dateien'. Pflichtfelder: dateiname, titel, file_content (Base64), objekt_typ, objekt_id.",
     inputSchema: zodToJsonSchema(FileUploadInput) as Record<string, unknown>,
   },
   {
@@ -214,13 +215,17 @@ export async function handleSubscriptionTool(
       const input = FileUploadInput.parse(args);
       // /v1/dateien requires x-www-form-urlencoded, not JSON
       const formData: Record<string, string> = {
-        filename: input.filename,
-        content_base64: input.content_base64,
-        objekt: input.objekt,
-        parameter: String(input.parameter),
+        dateiname: input.dateiname,
+        titel: input.titel,
+        file_content: input.file_content,
       };
-      if (input.titel) formData.titel = input.titel;
       if (input.beschreibung) formData.beschreibung = input.beschreibung;
+
+      // Object binding via stichwoerter
+      formData["stichwoerter[0][modul]"] = input.objekt_typ;
+      formData["stichwoerter[0][id]"] = input.objekt_id;
+      formData["stichwoerter[0][stichwort]"] = input.stichwort || "Anlage";
+
       const result = await client.postForm("/v1/dateien", formData);
       return {
         content: [

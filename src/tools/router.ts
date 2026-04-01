@@ -77,7 +77,7 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "create-crm-document", label: "CRM-Dokument anlegen (Notiz/Email/Telefonat)", category: "shop", handler: "subscription", toolName: "openxe-create-crm-document" },
   { action: "create-tracking", label: "Trackingnummer anlegen", category: "shop", handler: "subscription", toolName: "openxe-create-tracking" },
   { action: "create-resubmission", label: "Wiedervorlage/Aufgabe anlegen", category: "shop", handler: "subscription", toolName: "openxe-create-resubmission" },
-  { action: "upload-file", label: "Datei hochladen (an Objekt anhaengen)", category: "shop", handler: "subscription", toolName: "openxe-upload-file" },
+  { action: "upload-file", label: "Datei hochladen (an Auftrag/Kunde/Artikel etc. anhaengen)", category: "shop", handler: "subscription", toolName: "openxe-upload-file" },
 
   // === System ===
   { action: "server-time", label: "Serverzeit abrufen", category: "system", handler: "subscription", toolName: "openxe-server-time" },
