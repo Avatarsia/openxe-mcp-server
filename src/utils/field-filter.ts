@@ -91,8 +91,10 @@ export function filterDeleted(records: any[]): any[] {
     if (String(r.kundennummer || "").startsWith("DEL")) return false;
     // Skip if belegnr starts with "DEL"
     if (String(r.belegnr || "").startsWith("DEL")) return false;
-    // Skip if name is empty AND kundennummer is empty (ghost records)
-    if (!r.name && !r.kundennummer && !r.belegnr) return false;
+    // Ghost record check — skip records with NO identifying info
+    const hasName = r.name || r.name_de || r.bezeichnung || r.titel;
+    const hasNumber = r.kundennummer || r.belegnr || r.nummer || r.lieferantennummer;
+    if (!hasName && !hasNumber) return false;
     return true;
   });
 }
