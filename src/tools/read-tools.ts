@@ -89,6 +89,24 @@ interface ToolResult {
   isError?: boolean;
 }
 
+// --- Helper: unwrap nested API data ---
+// The OpenXE API returns { data: { data: [...] } } through the client,
+// so result.data is { data: [...], pagination?: {...} } instead of a plain array.
+
+function unwrapList(rawData: unknown): any[] {
+  if (Array.isArray(rawData)) {
+    return rawData;
+  }
+  if (rawData && typeof rawData === 'object') {
+    const obj = rawData as Record<string, unknown>;
+    if (obj.data && Array.isArray(obj.data)) {
+      return obj.data;
+    }
+    return [rawData];
+  }
+  return [];
+}
+
 // --- Tool Definitions ---
 
 export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -156,27 +174,27 @@ export async function handleReadTool(
 
       const result = await client.get("/v1/adressen", apiParams);
 
+      // Unwrap nested API response: API returns { data: { data: [...] } } or { data: [...] }
+      let data = unwrapList(result.data) as Record<string, unknown>[];
+
       // Client-side filtering for fields the server ignores
-      let data = result.data as Record<string, unknown>[];
-      if (Array.isArray(data)) {
-        if (nameFilter) {
-          const lowerFilter = nameFilter.toLowerCase();
-          data = data.filter((a) => {
-            const n = String(a.name ?? "").toLowerCase();
-            const fn = String(a.firma ?? "").toLowerCase();
-            return n.includes(lowerFilter) || fn.includes(lowerFilter);
-          });
-        }
-        if (email) {
-          const lowerEmail = email.toLowerCase();
-          data = data.filter((a) =>
-            String(a.email ?? "").toLowerCase().includes(lowerEmail)
-          );
-        }
-        if (land) {
-          const upperLand = land.toUpperCase();
-          data = data.filter((a) => String(a.land ?? "").toUpperCase() === upperLand);
-        }
+      if (nameFilter) {
+        const lowerFilter = nameFilter.toLowerCase();
+        data = data.filter((a) => {
+          const n = String(a.name ?? "").toLowerCase();
+          const fn = String(a.firma ?? "").toLowerCase();
+          return n.includes(lowerFilter) || fn.includes(lowerFilter);
+        });
+      }
+      if (email) {
+        const lowerEmail = email.toLowerCase();
+        data = data.filter((a) =>
+          String(a.email ?? "").toLowerCase().includes(lowerEmail)
+        );
+      }
+      if (land) {
+        const upperLand = land.toUpperCase();
+        data = data.filter((a) => String(a.land ?? "").toUpperCase() === upperLand);
       }
 
       data = applySlimMode(data, SLIM_FIELDS.address) as Record<string, unknown>[];
@@ -214,7 +232,8 @@ export async function handleReadTool(
       if (filterArgs.items) apiParams.items = filterArgs.items;
 
       const result = await client.get("/v1/artikel", apiParams);
-      let data = Array.isArray(result.data) ? result.data : [];
+      // Unwrap nested API response
+      let data = unwrapList(result.data);
 
       data = applySlimMode(data, SLIM_FIELDS.article) as any[];
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
@@ -252,7 +271,8 @@ export async function handleReadTool(
       if (filterArgs.items) apiParams.items = filterArgs.items;
 
       const result = await client.get("/v1/artikelkategorien", apiParams);
-      let data = Array.isArray(result.data) ? result.data : [];
+      // Unwrap nested API response
+      let data = unwrapList(result.data);
 
       data = applySlimMode(data, SLIM_FIELDS.category) as any[];
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
@@ -274,7 +294,8 @@ export async function handleReadTool(
       if (filterArgs.items) apiParams.items = filterArgs.items;
 
       const result = await client.get("/v1/versandarten", apiParams);
-      let data = Array.isArray(result.data) ? result.data : [];
+      // Unwrap nested API response
+      let data = unwrapList(result.data);
 
       data = applySlimMode(data, SLIM_FIELDS.shipping) as any[];
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);
@@ -299,7 +320,8 @@ export async function handleReadTool(
       if (filterArgs.items) apiParams.items = filterArgs.items;
 
       const result = await client.get("/v1/dateien", apiParams);
-      let data = Array.isArray(result.data) ? result.data : [];
+      // Unwrap nested API response
+      let data = unwrapList(result.data);
 
       data = applySlimMode(data, SLIM_FIELDS.file) as any[];
       const { data: truncated, truncated: wasTruncated, total } = truncateWithWarning(data, MAX_LIST_RESULTS);

@@ -49,7 +49,7 @@ interface DocType {
   getName: string;
   path: string;
   labelDe: string;
-  slimKey: string;
+  slimKey: keyof typeof SLIM_FIELDS;
 }
 
 const DOC_TYPES: DocType[] = [
@@ -64,7 +64,7 @@ const DOC_TYPES: DocType[] = [
     listName: "openxe-list-orders",
     getName: "openxe-get-order",
     path: "auftraege",
-    labelDe: "Aufträge",
+    labelDe: "Auftr\u00e4ge",
     slimKey: "order",
   },
   {
@@ -119,6 +119,24 @@ for (const dt of DOC_TYPES) {
   GET_TOOL_PATH[dt.getName] = dt.path;
 }
 
+// --- Helper: unwrap nested API data ---
+// The OpenXE API returns { data: { data: [...] } } through the client,
+// so result.data is { data: [...], pagination?: {...} } instead of a plain array.
+
+function unwrapList(rawData: unknown): any[] {
+  if (Array.isArray(rawData)) {
+    return rawData;
+  }
+  if (rawData && typeof rawData === 'object') {
+    const obj = rawData as Record<string, unknown>;
+    if (obj.data && Array.isArray(obj.data)) {
+      return obj.data;
+    }
+    return [rawData];
+  }
+  return [];
+}
+
 // --- Handler ---
 
 export async function handleDocumentReadTool(
@@ -139,7 +157,8 @@ export async function handleDocumentReadTool(
 
     const result = await client.get(`/v1/belege/${listPath}`, params);
 
-    let rows = Array.isArray(result.data) ? result.data : [result.data];
+    // Unwrap nested API response: API returns { data: { data: [...] } } or { data: [...] }
+    let rows = unwrapList(result.data);
 
     // Always apply slim mode on list tools
     const slimFields = LIST_TOOL_SLIM[toolName];
