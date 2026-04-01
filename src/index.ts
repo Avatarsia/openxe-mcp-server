@@ -187,6 +187,7 @@ async function main() {
     ...DOCUMENT_TOOL_DEFINITIONS,
     ...DOCUMENT_READ_TOOL_DEFINITIONS,
     ...SUBSCRIPTION_TOOL_DEFINITIONS,
+    ...READ_TOOL_DEFINITIONS,
   ];
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -206,6 +207,9 @@ async function main() {
   const subscriptionToolNames = new Set(
     SUBSCRIPTION_TOOL_DEFINITIONS.map((t) => t.name)
   );
+  const readToolNames = new Set(
+    READ_TOOL_DEFINITIONS.map((t) => t.name)
+  );
 
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ServerResult> => {
     const { name, arguments: args } = request.params;
@@ -222,6 +226,9 @@ async function main() {
     }
     if (subscriptionToolNames.has(name)) {
       return handleSubscriptionTool(name, toolArgs, client) as Promise<ServerResult>;
+    }
+    if (readToolNames.has(name)) {
+      return handleReadTool(name, toolArgs, client) as Promise<ServerResult>;
     }
 
     return {
