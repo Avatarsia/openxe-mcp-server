@@ -27,7 +27,9 @@ const CrmDocumentCreateInput = z.object({
   typ: z.enum(["email", "brief", "telefon", "notiz"]).describe("Document type"),
   betreff: z.string().describe("Subject"),
   content: z.string().optional().describe("Content/body"),
-  datum: z.string().optional().describe("Date YYYY-MM-DD"),
+  datum: z.string().optional().describe("Date YYYY-MM-DD (auto-set to today if omitted)"),
+  uhrzeit: z.string().optional().describe("Time HH:mm:ss (auto-set to now if omitted)"),
+  bearbeiter: z.string().optional().describe("Author/creator name (defaults to 'API')"),
   projekt: z.number().int().optional().describe("Project ID"),
 });
 
@@ -51,6 +53,9 @@ const ResubmissionCreateInput = z.object({
   beschreibung: z.string().optional().describe("Description"),
   bearbeiter: z.string().optional().describe("Assigned user"),
   adresse_mitarbeiter: z.number().int().optional().describe("Employee address ID"),
+  datum_angelegt: z.string().optional().describe("Creation date YYYY-MM-DD (auto-set to today if omitted)"),
+  zeit_angelegt: z.string().optional().describe("Creation time HH:mm:ss (auto-set to now if omitted)"),
+  oeffentlich: z.number().int().min(0).max(1).optional().describe("Visibility (1=visible to all, auto-set to 1 if omitted)"),
 });
 
 const FileUploadInput = z.object({
@@ -185,7 +190,21 @@ export async function handleSubscriptionTool(
     }
     case "openxe-create-crm-document": {
       const input = CrmDocumentCreateInput.parse(args);
-      const result = await client.post("/v1/crmdokumente", input);
+      const data: Record<string, unknown> = { ...input };
+      // Auto-set datum and uhrzeit if not provided
+      if (!data.datum) {
+        const now = new Date();
+        data.datum = now.toISOString().split('T')[0]; // YYYY-MM-DD
+      }
+      if (!data.uhrzeit) {
+        const now = new Date();
+        data.uhrzeit = now.toTimeString().split(' ')[0]; // HH:mm:ss
+      }
+      // Default bearbeiter to "API" if not set
+      if (!data.bearbeiter) {
+        data.bearbeiter = "API";
+      }
+      const result = await client.post("/v1/crmdokumente", data);
       return {
         content: [
           { type: "text", text: JSON.stringify(result.data, null, 2) },
@@ -203,7 +222,23 @@ export async function handleSubscriptionTool(
     }
     case "openxe-create-resubmission": {
       const input = ResubmissionCreateInput.parse(args);
-      const result = await client.post("/v1/wiedervorlagen", input);
+      const data: Record<string, unknown> = { ...input };
+      // Auto-set creation timestamp
+      if (!data.datum_angelegt) {
+        data.datum_angelegt = new Date().toISOString().split('T')[0];
+      }
+      if (!data.zeit_angelegt) {
+        data.zeit_angelegt = new Date().toTimeString().split(' ')[0];
+      }
+      // Default oeffentlich to 1 (visible to all) if not set
+      if (data.oeffentlich === undefined) {
+        data.oeffentlich = 1;
+      }
+      // Default bearbeiter to adresse value if not set (so it shows up for someone)
+      if (!data.bearbeiter && data.adresse) {
+        data.bearbeiter = data.adresse;
+      }
+      const result = await client.post("/v1/wiedervorlagen", data);
       return {
         content: [
           { type: "text", text: JSON.stringify(result.data, null, 2) },
