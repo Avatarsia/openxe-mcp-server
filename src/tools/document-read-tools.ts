@@ -1,4 +1,34 @@
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
+
+// --- Shared schemas ---
+
+const ListFilters = z.object({
+  belegnr: z.string().optional().describe("Belegnummer (z.B. 'AU-2026-0001')"),
+  kundennummer: z.string().optional().describe("Kundennummer"),
+  status: z.string().optional().describe("Status des Belegs"),
+  datum_gte: z
+    .string()
+    .optional()
+    .describe("Datum ab (YYYY-MM-DD), filtert datum >= Wert"),
+  datum_lte: z
+    .string()
+    .optional()
+    .describe("Datum bis (YYYY-MM-DD), filtert datum <= Wert"),
+});
+
+const GetByIdInput = z.object({
+  id: z.number().int().positive().describe("Beleg-ID"),
+  include: z
+    .string()
+    .optional()
+    .describe(
+      "Komma-getrennte Include-Felder, z.B. 'positionen,protokoll'"
+    ),
+});
+
+// --- Types ---
 
 interface ToolDefinition {
   name: string;
@@ -11,15 +41,128 @@ interface ToolResult {
   isError?: boolean;
 }
 
-export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = [];
+// --- Document type config ---
+
+interface DocType {
+  listName: string;
+  getName: string;
+  path: string;
+  labelDe: string;
+}
+
+const DOC_TYPES: DocType[] = [
+  {
+    listName: "openxe-list-quotes",
+    getName: "openxe-get-quote",
+    path: "angebote",
+    labelDe: "Angebote",
+  },
+  {
+    listName: "openxe-list-orders",
+    getName: "openxe-get-order",
+    path: "auftraege",
+    labelDe: "Auftraege",
+  },
+  {
+    listName: "openxe-list-invoices",
+    getName: "openxe-get-invoice",
+    path: "rechnungen",
+    labelDe: "Rechnungen",
+  },
+  {
+    listName: "openxe-list-delivery-notes",
+    getName: "openxe-get-delivery-note",
+    path: "lieferscheine",
+    labelDe: "Lieferscheine",
+  },
+  {
+    listName: "openxe-list-credit-memos",
+    getName: "openxe-get-credit-memo",
+    path: "gutschriften",
+    labelDe: "Gutschriften",
+  },
+];
+
+// --- Build tool definitions ---
+
+export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = DOC_TYPES.flatMap(
+  (dt) => [
+    {
+      name: dt.listName,
+      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte.`,
+      inputSchema: zodToJsonSchema(ListFilters) as Record<string, unknown>,
+    },
+    {
+      name: dt.getName,
+      description: `Einzelnes Dokument aus ${dt.labelDe} abrufen (GET /v1/belege/${dt.path}/{id}). Optional: include (z.B. 'positionen,protokoll').`,
+      inputSchema: zodToJsonSchema(GetByIdInput) as Record<string, unknown>,
+    },
+  ]
+);
+
+// --- Lookup maps ---
+
+const LIST_TOOL_PATH: Record<string, string> = {};
+const GET_TOOL_PATH: Record<string, string> = {};
+
+for (const dt of DOC_TYPES) {
+  LIST_TOOL_PATH[dt.listName] = dt.path;
+  GET_TOOL_PATH[dt.getName] = dt.path;
+}
+
+// --- Handler ---
 
 export async function handleDocumentReadTool(
-  _name: string,
-  _args: Record<string, unknown>,
-  _client: OpenXEClient
+  toolName: string,
+  args: Record<string, unknown>,
+  client: OpenXEClient
 ): Promise<ToolResult> {
+  // List tools
+  const listPath = LIST_TOOL_PATH[toolName];
+  if (listPath) {
+    const filters = ListFilters.parse(args);
+    const params: Record<string, string> = {};
+    if (filters.belegnr) params.belegnr = filters.belegnr;
+    if (filters.kundennummer) params.kundennummer = filters.kundennummer;
+    if (filters.status) params.status = filters.status;
+    if (filters.datum_gte) params.datum_gte = filters.datum_gte;
+    if (filters.datum_lte) params.datum_lte = filters.datum_lte;
+
+    const result = await client.get(`/v1/belege/${listPath}`, params);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            { data: result.data, pagination: result.pagination },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+
+  // Get-by-ID tools
+  const getPath = GET_TOOL_PATH[toolName];
+  if (getPath) {
+    const { id, include } = GetByIdInput.parse(args);
+    const params: Record<string, string> = {};
+    if (include) params.include = include;
+
+    const result = await client.get(`/v1/belege/${getPath}/${id}`, params);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(result.data, null, 2),
+        },
+      ],
+    };
+  }
+
   return {
-    content: [{ type: "text", text: `Unknown document read tool: ${_name}` }],
+    content: [{ type: "text", text: `Unknown document-read tool: ${toolName}` }],
     isError: true,
   };
 }
