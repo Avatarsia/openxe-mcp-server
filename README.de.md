@@ -13,10 +13,11 @@
 5. [Konfiguration](#konfiguration)
 6. [Einrichtung in Claude Desktop](#einrichtung-in-claude-desktop)
 7. [Einrichtung in Claude Code](#einrichtung-in-claude-code)
-8. [Erste Schritte](#erste-schritte)
-9. [Verfuegbare Funktionen](#verfuegbare-funktionen)
-10. [Haeufige Probleme](#haeufige-probleme)
-11. [Wichtige Hinweise](#wichtige-hinweise)
+8. [Verwendung mit lokalen LLMs](#verwendung-mit-lokalen-llms)
+9. [Erste Schritte](#erste-schritte)
+10. [Verfuegbare Funktionen](#verfuegbare-funktionen)
+11. [Haeufige Probleme](#haeufige-probleme)
+12. [Wichtige Hinweise](#wichtige-hinweise)
 
 ---
 
@@ -260,6 +261,60 @@ Jetzt kannst du direkt loslegen und mit OpenXE arbeiten!
 
 ---
 
+## Verwendung mit lokalen LLMs
+
+Der MCP-Server ist nicht auf Claude beschraenkt. Du kannst ihn auch mit lokalen KI-Modellen verwenden, die auf deinem eigenen Computer laufen.
+
+### Option 1: OpenWebUI + Ollama
+
+[OpenWebUI](https://github.com/open-webui/open-webui) hat experimentelle MCP-Unterstuetzung und laeuft mit [Ollama](https://ollama.com/) als Backend (z.B. Llama, Mistral, Qwen).
+
+1. Installiere Ollama und lade ein Modell: `ollama pull llama3`
+2. Installiere OpenWebUI
+3. Konfiguriere den MCP-Server als stdio-Tool in OpenWebUI
+
+### Option 2: LM Studio + MCP Bridge
+
+[LM Studio](https://lmstudio.ai/) fuer das lokale Modell, kombiniert mit einem MCP-Client-Wrapper der die Tools als Function Calls weiterreicht.
+
+### Option 3: Den API-Client direkt als Library nutzen
+
+Der pragmatischste Weg: Du brauchst MCP gar nicht, wenn dein LLM Function Calling unterstuetzt. Nutze den `OpenXEClient` direkt:
+
+```typescript
+import { OpenXEClient } from "./src/client/openxe-client.js";
+
+const client = new OpenXEClient({
+  baseUrl: "http://dein-openxe/api/index.php",
+  username: "api-user",
+  password: "api-pass",
+  timeout: 30000
+});
+
+// Kunden abrufen
+const kunden = await client.get("/v1/adressen");
+
+// Artikel mit Preisen
+const artikel = await client.get("/v1/artikel", { include: "verkaufspreise" });
+
+// Auftrag erstellen
+const auftrag = await client.legacyPost("AuftragCreate", {
+  kundennummer: "10001",
+  artikelliste: {
+    position: [
+      { nummer: "700001", menge: "100", preis: "0.16" }
+    ]
+  }
+});
+```
+
+Die Tool-Definitionen aus `src/tools/*.ts` kannst du in das Function-Calling-Format deines Modells uebersetzen (OpenAI-Format, Llama-Format, etc.).
+
+### Hinweis
+
+MCP ist aktuell primaer im Claude-Oekosystem verbreitet. Die Unterstuetzung durch andere LLMs waechst aber stetig. Der `OpenXEClient` funktioniert unabhaengig von MCP als reine TypeScript-Bibliothek und kann mit jedem System genutzt werden.
+
+---
 ## Erste Schritte
 
 Hier sind ein paar Beispiel-Anfragen, die du an Claude stellen kannst:
