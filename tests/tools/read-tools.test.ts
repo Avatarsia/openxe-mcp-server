@@ -276,27 +276,28 @@ describe("Read Tools", () => {
   });
 
   it("auto-paginates when DEL records are filtered out", async () => {
-    // Page 1: 3 records, 2 are DEL -> only 1 survives
-    // Page 2: 2 normal records
+    // Page 1: 100 records (full page), 99 are DEL -> only 1 survives, triggers page 2
+    // Page 2: 2 normal records (less than pageSize -> last page)
+    const page1Data: any[] = [{ id: 1, name: "Good", kundennummer: "K1" }];
+    for (let i = 2; i <= 100; i++) {
+      page1Data.push({ id: i, name: `Deleted${i}`, kundennummer: `DEL-${i}` });
+    }
+
     mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
       const page = parseInt(params?.page ?? "1", 10);
       if (page === 1) {
         return Promise.resolve({
-          data: [
-            { id: 1, name: "Good", kundennummer: "K1" },
-            { id: 2, name: "Deleted", kundennummer: "DEL-001" },
-            { id: 3, name: "Also Deleted", geloescht: "1" },
-          ],
-          pagination: { totalCount: 5, page: 1, itemsPerPage: 100 },
+          data: page1Data,
+          pagination: { totalCount: 102, page: 1, itemsPerPage: 100 },
         });
       }
       if (page === 2) {
         return Promise.resolve({
           data: [
-            { id: 4, name: "Also Good", kundennummer: "K2" },
-            { id: 5, name: "Third Good", kundennummer: "K3" },
+            { id: 101, name: "Also Good", kundennummer: "K2" },
+            { id: 102, name: "Third Good", kundennummer: "K3" },
           ],
-          pagination: { totalCount: 5, page: 2, itemsPerPage: 100 },
+          pagination: { totalCount: 102, page: 2, itemsPerPage: 100 },
         });
       }
       return Promise.resolve({ data: [], pagination: undefined });
@@ -311,7 +312,7 @@ describe("Read Tools", () => {
     const parsed = JSON.parse(result.content[0].text);
     // Should have fetched both pages and returned all 3 non-DEL records
     expect(parsed.data).toHaveLength(3);
-    expect(parsed.data.map((a: any) => a.id)).toEqual([1, 4, 5]);
+    expect(parsed.data.map((a: any) => a.id)).toEqual([1, 101, 102]);
     // Should report filtered-out DEL records in _info
     expect(parsed._info).toContain("geloeschte ausgeblendet");
   });

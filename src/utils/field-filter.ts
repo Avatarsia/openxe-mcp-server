@@ -45,25 +45,21 @@ export async function fetchFilteredList(
 
     if (list.length === 0) break; // no more data from API
 
-    totalFetched += list.length;
+    const rawCount = list.length;
+    totalFetched += rawCount;
 
     // Apply DEL filter
     if (!includeDeleted) {
-      const beforeCount = list.length;
-      list = filterDeleted(list);
-      totalFilteredOut += beforeCount - list.length;
+      const filtered = filterDeleted(list);
+      totalFilteredOut += rawCount - filtered.length;
+      list = filtered;
     }
 
     allRecords = allRecords.concat(list);
 
-    if (totalFetched >= (result.pagination?.totalCount || Infinity)) break; // fetched everything
-    if (list.length < pageSize && !includeDeleted) {
-      // Page wasn't full even before filtering — might be last page
-      // But we filtered some out, so check if API has more
-      page++;
-      continue;
-    }
-    if (totalFetched < pageSize) break; // API returned less than requested = last page
+    // If API returned fewer records than requested, we've reached the last page
+    if (rawCount < pageSize) break;
+
     page++;
   }
 
