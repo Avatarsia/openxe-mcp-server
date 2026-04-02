@@ -7,6 +7,9 @@ import { handleDocumentTool } from "./document-tools.js";
 import { handleAddressTool } from "./address-tools.js";
 import { handleSubscriptionTool } from "./subscription-tools.js";
 import { handleTimeTool } from "./time-tools.js";
+import { handleBusinessQueryTool } from "./business-query-tools.js";
+import { handleBatchPDFTool } from "./batch-pdf-tools.js";
+import { BUSINESS_PRESETS } from "../utils/smart-filters.js";
 
 // --- Types ---
 
@@ -23,13 +26,13 @@ interface ToolResult {
 
 // --- Action Registry ---
 
-type Category = "stammdaten" | "belege" | "shop" | "zeiterfassung" | "system";
+type Category = "stammdaten" | "belege" | "business" | "shop" | "zeiterfassung" | "system";
 
 interface ActionEntry {
   action: string;
   label: string;
   category: Category;
-  handler: "read" | "document-read" | "document" | "address" | "subscription" | "time";
+  handler: "read" | "document-read" | "document" | "address" | "subscription" | "time" | "business-query" | "batch-pdf";
   toolName: string; // original openxe-* tool name
 }
 
@@ -70,6 +73,7 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "mark-invoice-paid", label: "Rechnung als bezahlt markieren", category: "belege", handler: "document", toolName: "openxe-mark-invoice-paid" },
   { action: "delete-draft-invoice", label: "Entwurfs-Rechnung loeschen", category: "belege", handler: "document", toolName: "openxe-delete-draft-invoice" },
   { action: "get-document-pdf", label: "PDF eines Belegs abrufen (typ + id)", category: "belege", handler: "document", toolName: "openxe-get-document-pdf" },
+  { action: "batch-pdf", label: "Mehrere Beleg-PDFs herunterladen (max 20, Filter: ids/status/zeitraum/where)", category: "belege", handler: "batch-pdf", toolName: "openxe-batch-pdf" },
 
   // === Shop / Sonstiges ===
   { action: "create-subscription", label: "Abo-Artikel anlegen", category: "shop", handler: "subscription", toolName: "openxe-create-subscription" },
@@ -89,6 +93,15 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "edit-time-entry", label: "Zeiteintrag bearbeiten", category: "zeiterfassung", handler: "time", toolName: "openxe-edit-time-entry" },
   { action: "delete-time-entry", label: "Zeiteintrag loeschen", category: "zeiterfassung", handler: "time", toolName: "openxe-delete-time-entry" },
 
+  // === Business Queries ===
+  ...Object.entries(BUSINESS_PRESETS).map(([key, preset]) => ({
+    action: `bq-${key}`,
+    label: preset.description,
+    category: "business" as Category,
+    handler: "business-query" as const,
+    toolName: "openxe-business-query",
+  })),
+
   // === System ===
   { action: "server-time", label: "Serverzeit abrufen", category: "system", handler: "subscription", toolName: "openxe-server-time" },
 ];
@@ -103,7 +116,7 @@ for (const entry of ACTION_REGISTRY) {
 
 const DiscoverInput = z.object({
   category: z
-    .enum(["stammdaten", "belege", "shop", "zeiterfassung", "system", "alle"])
+    .enum(["stammdaten", "belege", "business", "shop", "zeiterfassung", "system", "alle"])
     .optional()
     .default("alle")
     .describe("Kategorie-Filter (default: alle)"),
@@ -119,12 +132,13 @@ export const DISCOVER_TOOL_DEFINITION: ToolDefinition = {
 const CATEGORY_LABELS: Record<Category, string> = {
   stammdaten: "Stammdaten",
   belege: "Belege",
+  business: "Business Queries",
   shop: "Shop / CRM / Sonstiges",
   zeiterfassung: "Zeiterfassung",
   system: "System",
 };
 
-const CATEGORY_ORDER: Category[] = ["stammdaten", "belege", "shop", "zeiterfassung", "system"];
+const CATEGORY_ORDER: Category[] = ["stammdaten", "belege", "business", "shop", "zeiterfassung", "system"];
 
 export function handleDiscover(args: Record<string, unknown>): ToolResult {
   const { category } = DiscoverInput.parse(args);
@@ -206,6 +220,10 @@ export async function handleRouter(
       return handleSubscriptionTool(entry.toolName, params, client);
     case "time":
       return handleTimeTool(entry.toolName, params, client);
+    case "business-query":
+      return handleBusinessQueryTool({ preset: action.replace(/^bq-/, ""), ...params }, client);
+    case "batch-pdf":
+      return handleBatchPDFTool(entry.toolName, params, client);
     default:
       return {
         content: [{ type: "text", text: `Internal error: unknown handler "${entry.handler}"` }],

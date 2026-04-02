@@ -57,6 +57,14 @@ import {
   handleDiscover,
   handleRouter,
 } from "./tools/router.js";
+import {
+  BUSINESS_QUERY_TOOL_DEFINITION,
+  handleBusinessQueryTool,
+} from "./tools/business-query-tools.js";
+import {
+  DASHBOARD_TOOL_DEFINITIONS,
+  handleDashboardTool,
+} from "./tools/dashboard-tools.js";
 
 async function main() {
   const config = loadConfig();
@@ -199,6 +207,8 @@ async function main() {
     ...SUBSCRIPTION_TOOL_DEFINITIONS,
     ...TIME_TOOL_DEFINITIONS,
     ...READ_TOOL_DEFINITIONS,
+    ...DASHBOARD_TOOL_DEFINITIONS,
+    BUSINESS_QUERY_TOOL_DEFINITION,
   ];
 
   const ROUTER_TOOLS = [
@@ -229,6 +239,9 @@ async function main() {
   );
   const timeToolNames = new Set(
     TIME_TOOL_DEFINITIONS.map((t) => t.name)
+  );
+  const dashboardToolNames = new Set(
+    DASHBOARD_TOOL_DEFINITIONS.map((t) => t.name)
   );
   const readToolNames = new Set(
     READ_TOOL_DEFINITIONS.map((t) => t.name)
@@ -264,6 +277,12 @@ async function main() {
     }
     if (readToolNames.has(name)) {
       return handleReadTool(name, toolArgs, client) as Promise<ServerResult>;
+    }
+    if (dashboardToolNames.has(name)) {
+      return handleDashboardTool(name, toolArgs, client) as Promise<ServerResult>;
+    }
+    if (name === "openxe-business-query") {
+      return handleBusinessQueryTool(toolArgs, client) as Promise<ServerResult>;
     }
 
     return {

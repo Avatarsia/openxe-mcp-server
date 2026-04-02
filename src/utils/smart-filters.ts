@@ -81,22 +81,7 @@ export function applyAggregate(records: any[], op: AggregateOp): any {
   if (op === "count") return { count: records.length };
 
   if (typeof op === "object") {
-    if ("sum" in op && typeof op.sum === "string") {
-      const total = records.reduce((s, r) => s + (parseFloat(r[op.sum as string]) || 0), 0);
-      return { sum: Math.round(total * 100) / 100, field: op.sum, count: records.length };
-    }
-    if ("avg" in op && typeof op.avg === "string") {
-      const total = records.reduce((s, r) => s + (parseFloat(r[op.avg as string]) || 0), 0);
-      return { avg: records.length ? Math.round((total / records.length) * 100) / 100 : 0, field: op.avg, count: records.length };
-    }
-    if ("min" in op && typeof op.min === "string") {
-      const vals = records.map(r => parseFloat(r[op.min as string]) || 0);
-      return { min: Math.min(...vals), field: op.min };
-    }
-    if ("max" in op && typeof op.max === "string") {
-      const vals = records.map(r => parseFloat(r[op.max as string]) || 0);
-      return { max: Math.max(...vals), field: op.max };
-    }
+    // groupBy must be checked first because it can also contain "sum"
     if ("groupBy" in op) {
       const groups: Record<string, any> = {};
       for (const r of records) {
@@ -163,3 +148,119 @@ export const BUSINESS_PRESETS: Record<string, {
     description: "Nicht freigegebene Rechnungsentwuerfe"
   },
 };
+
+// --- Output format helpers ---
+
+export function formatAsTable(records: any[], fields?: string[]): string {
+  if (records.length === 0) return "(keine Ergebnisse)";
+  const cols = fields || Object.keys(records[0]);
+  const header = cols.join(" | ");
+  const separator = cols.map(c => "-".repeat(Math.max(c.length, 6))).join("-|-");
+  const rows = records.map(r => cols.map(c => String(r[c] ?? "")).join(" | "));
+  return [header, separator, ...rows].join("\n");
+}
+
+export function formatAsCsv(records: any[], fields?: string[]): string {
+  if (records.length === 0) return "";
+  const cols = fields || Object.keys(records[0]);
+  const header = cols.join(";");
+  const rows = records.map(r => cols.map(c => {
+    const v = String(r[c] ?? "");
+    return v.includes(";") || v.includes('"') ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }).join(";"));
+  return [header, ...rows].join("\n");
+}
+
+export function formatAsIds(records: any[]): string {
+  return records.map(r => r.id).filter(Boolean).join(",");
+}
+
+// --- Zeitraum (date range) shortcuts ---
+
+const MONTH_NAMES: Record<string, number> = {
+  januar: 0, februar: 1, maerz: 2, april: 3, mai: 4, juni: 5,
+  juli: 6, august: 7, september: 8, oktober: 9, november: 10, dezember: 11,
+};
+
+function fmtDate(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
+/**
+ * Parse a German-language date range shortcut into { von, bis } ISO date strings.
+ *
+ * Supported formats:
+ *   heute, diese-woche, dieser-monat, letzter-monat,
+ *   letzte-7-tage, letzte-30-tage, letzte-90-tage,
+ *   oktober-2025  (month-year),
+ *   Q3-2025        (quarter-year),
+ *   2025           (full year)
+ */
+export function parseZeitraum(zeitraum: string): { von: string; bis: string } {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+
+  switch (zeitraum.toLowerCase()) {
+    case "heute":
+      return { von: fmtDate(now), bis: fmtDate(now) };
+    case "diese-woche": {
+      const day = now.getDay() || 7;
+      const mon = new Date(now);
+      mon.setDate(now.getDate() - day + 1);
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      return { von: fmtDate(mon), bis: fmtDate(sun) };
+    }
+    case "dieser-monat":
+      return {
+        von: `${year}-${String(month + 1).padStart(2, "0")}-01`,
+        bis: fmtDate(new Date(year, month + 1, 0)),
+      };
+    case "letzter-monat":
+      return {
+        von: fmtDate(new Date(year, month - 1, 1)),
+        bis: fmtDate(new Date(year, month, 0)),
+      };
+    case "letzte-7-tage": {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 7);
+      return { von: fmtDate(d), bis: fmtDate(now) };
+    }
+    case "letzte-30-tage": {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 30);
+      return { von: fmtDate(d), bis: fmtDate(now) };
+    }
+    case "letzte-90-tage": {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 90);
+      return { von: fmtDate(d), bis: fmtDate(now) };
+    }
+    default: {
+      const monthMatch = zeitraum.match(
+        /^(januar|februar|maerz|april|mai|juni|juli|august|september|oktober|november|dezember)-(\d{4})$/i
+      );
+      if (monthMatch) {
+        const m = MONTH_NAMES[monthMatch[1].toLowerCase()];
+        const y = parseInt(monthMatch[2]);
+        return { von: fmtDate(new Date(y, m, 1)), bis: fmtDate(new Date(y, m + 1, 0)) };
+      }
+      const qMatch = zeitraum.match(/^Q([1-4])-(\d{4})$/i);
+      if (qMatch) {
+        const q = parseInt(qMatch[1]);
+        const y = parseInt(qMatch[2]);
+        return {
+          von: fmtDate(new Date(y, (q - 1) * 3, 1)),
+          bis: fmtDate(new Date(y, q * 3, 0)),
+        };
+      }
+      const yearMatch = zeitraum.match(/^(\d{4})$/);
+      if (yearMatch) {
+        const y = parseInt(yearMatch[1]);
+        return { von: `${y}-01-01`, bis: `${y}-12-31` };
+      }
+      throw new Error(`Unbekannter Zeitraum: ${zeitraum}`);
+    }
+  }
+}

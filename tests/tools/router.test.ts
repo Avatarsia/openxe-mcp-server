@@ -284,7 +284,7 @@ describe("Router Tools", () => {
     });
 
     it("all entries have valid handler types", () => {
-      const validHandlers = ["read", "document-read", "document", "address", "subscription", "time"];
+      const validHandlers = ["read", "document-read", "document", "address", "subscription", "time", "business-query"];
       for (const entry of ACTION_REGISTRY) {
         expect(validHandlers).toContain(entry.handler);
       }
