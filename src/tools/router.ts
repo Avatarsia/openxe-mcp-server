@@ -129,7 +129,7 @@ const DiscoverInput = z.object({
 export const DISCOVER_TOOL_DEFINITION: ToolDefinition = {
   name: "openxe-discover",
   description:
-    "Zeigt alle verfuegbaren OpenXE-Aktionen inkl. Smart Filter Dokumentation. Rufe dieses Tool zuerst auf um zu sehen was moeglich ist. Optional: category filter (stammdaten, belege, business, shop, zeiterfassung, system).",
+    "Zeigt alle verfuegbaren OpenXE-Aktionen. IMMER ZUERST AUFRUFEN wenn du nicht weisst welche Aktionen es gibt. Optional: category='stammdaten'/'belege'/'zeiterfassung'/'dashboard'/'alle'",
   inputSchema: zodToJsonSchema(DiscoverInput) as Record<string, unknown>,
 };
 
@@ -181,6 +181,15 @@ export function handleDiscover(args: Record<string, unknown>): ToolResult {
 
   lines.push("Nutze openxe mit action=<name> und params={...} um eine Aktion auszufuehren.");
 
+  if (category === "alle") {
+    lines.push("");
+    lines.push("=== Beispiel-Workflows ===");
+    lines.push('Kunden suchen: openxe action=list-addresses params={where:{name:{contains:"Mueller"}}}');
+    lines.push('Top 5 Auftraege: openxe action=list-orders params={sort_field:"gesamtsumme",sort_order:"desc",limit:5}');
+    lines.push('Umsatz diesen Monat: openxe action=dashboard params={kpi:"umsatz-monat"}');
+    lines.push('Unbezahlte Rechnungen: openxe action=business-query params={preset:"offene-rechnungen"}');
+  }
+
   return {
     content: [{ type: "text", text: lines.join("\n") }],
   };
@@ -202,7 +211,7 @@ const RouterInput = z.object({
 export const ROUTER_TOOL_DEFINITION: ToolDefinition = {
   name: "openxe",
   description:
-    "Fuehrt eine OpenXE-Aktion aus. Nutze openxe-discover um verfuegbare Aktionen zu sehen. Alle list-* Aktionen unterstuetzen Smart Filter (where, fields, sort, limit, format, zeitraum, status_preset, aggregate). Alle list-* Aktionen unterstuetzen Smart Filter (where, fields, sort, limit, format, zeitraum, status_preset, aggregate).",
+    "Fuehrt eine OpenXE-Aktion aus. Nutze zuerst openxe-discover um verfuegbare Aktionen zu sehen. Beispiele: {action:'list-orders', params:{status_preset:'offen'}} oder {action:'dashboard', params:{kpi:'umsatz-monat'}}",
   inputSchema: zodToJsonSchema(RouterInput) as Record<string, unknown>,
 };
 
