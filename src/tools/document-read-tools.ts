@@ -2,7 +2,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList, FilteredListResult } from "../utils/field-filter.js";
-import { applyAggregate, AggregateOp, parseZeitraum, formatAsTable, formatAsCsv, formatAsIds } from "../utils/smart-filters.js";
+import { applyAggregate, AggregateOp, parseZeitraum, formatAsTable, formatAsCsv, formatAsIds, applyWhere } from "../utils/smart-filters.js";
 
 // --- Aggregate schema ---
 
@@ -17,6 +17,12 @@ const AggregateSchema = z
   ])
   .optional()
   .describe("Aggregation: 'count', {sum:'feld'}, {avg:'feld'}, {min:'feld'}, {max:'feld'}, {groupBy:'feld', sum?:'feld'}. Wird STATT der Datenliste zurueckgegeben.");
+
+// --- Where schema ---
+
+const whereSchema = z.record(z.string(), z.record(z.string(), z.any())).optional().describe(
+  'Client-seitige Filter. Beispiele: {plz: {startsWith: "2"}}, {email: {empty: true}}, {name: {contains: "Mueller"}}'
+);
 
 // --- Shared schemas ---
 
@@ -44,6 +50,7 @@ const ListFilters = z.object({
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   aggregate: AggregateSchema,
   format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
+  where: whereSchema,
 });
 
 const GetByIdInput = z.object({
@@ -198,12 +205,34 @@ export async function handleDocumentReadTool(
     const result = await fetchFilteredList(client, `/v1/belege/${listPath}`, params, {
       slimFields: [...slimFields],
       includeDeleted: filters.include_deleted,
+      skipSlim: !!filters.where,
     });
+
+    // applyWhere -- on full data (before slim)
+    let data: any[] = result.data;
+    if (filters.where) {
+      data = applyWhere(data, filters.where);
+      result.data = data;
+    }
 
     // Aggregate: return aggregation result instead of data list
     if (filters.aggregate) {
-      const aggResult = applyAggregate(result.data, filters.aggregate as AggregateOp);
+      const aggResult = applyAggregate(data, filters.aggregate as AggregateOp);
       return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
+    }
+
+    // Apply non-JSON output formats
+    if (filters.format === "table") return { content: [{ type: "text", text: formatAsTable(result.data) }] };
+    if (filters.format === "csv") return { content: [{ type: "text", text: formatAsCsv(result.data) }] };
+    if (filters.format === "ids") return { content: [{ type: "text", text: formatAsIds(result.data) }] };
+
+    // Slim if where was used (slim was skipped in fetchFilteredList)
+    if (filters.where) {
+      data = applySlimMode(data, [...slimFields]) as any[];
+      const { data: truncDoc, truncated: truncDocFlag } = truncateWithWarning(data, MAX_LIST_RESULTS);
+      result.data = truncDoc;
+      result.meta.returned = truncDoc.length;
+      result.meta.truncated = truncDocFlag || result.meta.truncated;
     }
 
     // Build info string
