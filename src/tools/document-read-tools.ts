@@ -223,6 +223,7 @@ export async function handleDocumentReadTool(
       slimFields: [...slimFields],
       includeDeleted: filters.include_deleted,
       skipSlim: !!(filters.where || filters.fields),
+      fetchAll: !!filters.where,
     });
 
     // applyWhere -- on full data (before slim)

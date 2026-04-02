@@ -19,18 +19,20 @@ export async function fetchFilteredList(
     includeDeleted?: boolean;
     maxResults?: number;
     skipSlim?: boolean;
+    fetchAll?: boolean;
   } = {}
 ): Promise<FilteredListResult> {
-  const { slimFields, includeDeleted = false, maxResults = MAX_LIST_RESULTS, skipSlim = false } = options;
+  const { slimFields, includeDeleted = false, maxResults = MAX_LIST_RESULTS, skipSlim = false, fetchAll = false } = options;
 
   let allRecords: any[] = [];
   let page = 1;
   const pageSize = 100; // fetch in large chunks to minimize API calls
   let totalFetched = 0;
   let totalFilteredOut = 0;
-  const maxPages = 10; // safety limit
+  const maxPages = fetchAll ? 50 : 10; // higher safety limit when fetching all
+  const stopAtMax = !fetchAll; // only stop early if not fetching all
 
-  while (allRecords.length < maxResults && page <= maxPages) {
+  while (page <= maxPages) {
     const result = await client.get(path, { ...params, page: String(page), items: String(pageSize) });
     const rawData = result.data;
     let list: any[];
@@ -60,6 +62,7 @@ export async function fetchFilteredList(
 
     // If API returned fewer records than requested, we've reached the last page
     if (rawCount < pageSize) break;
+    if (stopAtMax && allRecords.length >= maxResults) break;
 
     page++;
   }

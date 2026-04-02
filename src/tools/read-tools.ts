@@ -261,6 +261,7 @@ export async function handleReadTool(
         slimFields: SLIM_FIELDS.address,
         includeDeleted: include_deleted,
         skipSlim: !!(where || fields || nameFilter || email || land),
+        fetchAll: !!(where || nameFilter || email || land),
       });
 
       // Client-side filters (name, email, land)
@@ -347,6 +348,7 @@ export async function handleReadTool(
         slimFields: SLIM_FIELDS.article,
         includeDeleted: includeDeletedArt,
         skipSlim: !!(whereArt || fldsArt),
+        fetchAll: !!whereArt,
       });
 
       // applyWhere -- on full data (before slim)
@@ -409,6 +411,7 @@ export async function handleReadTool(
         slimFields: SLIM_FIELDS.category,
         includeDeleted: includeDeletedCat,
         skipSlim: !!(whereCat || fldsCat),
+        fetchAll: !!whereCat,
       });
 
       let dataCat: any[] = result.data;
@@ -453,6 +456,7 @@ export async function handleReadTool(
         slimFields: SLIM_FIELDS.shippingMethod,
         includeDeleted: includeDeletedShip,
         skipSlim: !!(whereShip || fldsShip),
+        fetchAll: !!whereShip,
       });
 
       let dataShip: any[] = result.data;
@@ -501,6 +505,7 @@ export async function handleReadTool(
         slimFields: SLIM_FIELDS.file,
         includeDeleted: includeDeletedFile,
         skipSlim: !!(whereFile || fldsFile),
+        fetchAll: !!whereFile,
       });
 
       let dataFile: any[] = result.data;
