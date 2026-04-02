@@ -191,7 +191,7 @@ Dein KI-Assistent waehlt automatisch die passenden Tools und Resources aus.
 | Artikel | Artikelstammdaten bearbeiten |
 | Bestellungen | Anlegen, Bearbeiten, Freigeben, Auflisten mit Smart Filters |
 | Einkaufspreise | Staffelpreise und Lieferanten-Konditionen ueber `get-article` mit `includeEinkaufspreise=true` |
-| Erweiterte Felder | waehrung, internebemerkung, versandart, ustid, lieferantennummer bei Erstellung |
+| Erweiterte Felder | waehrung, internebezeichnung, versandart, ustid, lieferantennummer bei Erstellung |
 | Dashboard-KPIs | offene-bestellungen, bestellvolumen-monat |
 | Abos | Wiederkehrende Auftraege verwalten |
 | Zeiterfassung | Stechuhr (kommen/gehen/Pause), Zeiteintraege CRUD, Wochen-Uebersicht |
