@@ -257,11 +257,14 @@ export class OpenXEClient {
     }
 
     // OpenXE native format: status.messageCode + data
+    // Data may live in raw.data OR raw.xml (nested XML-style responses like
+    // ZeiterfassungGet, StechuhrSummary, AdresseListeGet).
     if (raw?.status?.messageCode !== undefined || raw?.status?.messagecode !== undefined) {
       const messageCode = raw.status.messageCode ?? raw.status.messagecode;
       const success = messageCode === "1" || messageCode === 1;
       const error = success ? undefined : (raw?.status?.message ?? "Unknown legacy error");
-      return { success, data: raw.data as T, error };
+      const payload = raw.data ?? raw.xml;
+      return { success, data: payload as T, error };
     }
 
     // Some legacy endpoints return { xml: { ... } } with no status wrapper.
