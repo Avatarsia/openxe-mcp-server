@@ -2,7 +2,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList, FilteredListResult } from "../utils/field-filter.js";
-import { applyAggregate, AggregateOp, parseZeitraum, formatAsTable, formatAsCsv, formatAsIds, applyWhere } from "../utils/smart-filters.js";
+import { applyAggregate, AggregateOp, parseZeitraum, formatAsTable, formatAsCsv, formatAsIds, applyWhere, applyStatusPreset } from "../utils/smart-filters.js";
 
 // --- Aggregate schema ---
 
@@ -43,6 +43,12 @@ const ListFilters = z.object({
     .optional()
     .describe(
       "Zeitraum-Shortcut: 'heute', 'diese-woche', 'dieser-monat', 'letzter-monat', 'letzte-30-tage', 'oktober-2025', 'Q3-2025', '2025'"
+    ),
+  status_preset: z
+    .string()
+    .optional()
+    .describe(
+      "Status-Shortcut: 'offen', 'unbezahlt', 'ueberfaellig', 'bezahlt', 'entwurf', 'mahnkandidaten'"
     ),
   include_deleted: z
     .boolean()
@@ -85,6 +91,7 @@ interface DocType {
   labelDe: string;
   slimKey: keyof typeof SLIM_FIELDS;
   hintDe: string;
+  statusEntity?: string; // key into STATUS_PRESETS
 }
 
 const DOC_TYPES: DocType[] = [
@@ -95,6 +102,7 @@ const DOC_TYPES: DocType[] = [
     labelDe: "Angebote",
     slimKey: "quote",
     hintDe: "Fuer Details nutze openxe-get-quote mit der ID.",
+    statusEntity: "quotes",
   },
   {
     listName: "openxe-list-orders",
@@ -103,6 +111,7 @@ const DOC_TYPES: DocType[] = [
     labelDe: "Aufträge",
     slimKey: "order",
     hintDe: "Fuer Details nutze openxe-get-order mit der ID.",
+    statusEntity: "orders",
   },
   {
     listName: "openxe-list-invoices",
@@ -111,6 +120,7 @@ const DOC_TYPES: DocType[] = [
     labelDe: "Rechnungen",
     slimKey: "invoice",
     hintDe: "Fuer Details nutze openxe-get-invoice mit der ID.",
+    statusEntity: "invoices",
   },
   {
     listName: "openxe-list-delivery-notes",
@@ -136,7 +146,7 @@ export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = DOC_TYPES.flatMa
   (dt) => [
     {
       name: dt.listName,
-      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Gibt eine kompakte Liste zurueck (nur Schluesselfelder: id, belegnr, status, name, datum, summe). Fuer alle Details eines Eintrags nutze ${dt.getName}. Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte, zeitraum (z.B. 'dieser-monat', 'Q3-2025'). Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.`,
+      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Gibt eine kompakte Liste zurueck (nur Schluesselfelder: id, belegnr, status, name, datum, summe). Fuer alle Details eines Eintrags nutze ${dt.getName}. Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte, zeitraum (z.B. 'dieser-monat', 'Q3-2025'), status_preset (z.B. 'offen', 'unbezahlt', 'ueberfaellig', 'bezahlt', 'entwurf', 'mahnkandidaten'). Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.`,
       inputSchema: zodToJsonSchema(ListFilters) as Record<string, unknown>,
     },
     {
@@ -152,14 +162,17 @@ export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = DOC_TYPES.flatMa
 const LIST_TOOL_PATH: Record<string, string> = {};
 const LIST_TOOL_SLIM: Record<string, readonly string[]> = {};
 const LIST_TOOL_HINT: Record<string, string> = {};
+const LIST_TOOL_STATUS_ENTITY: Record<string, string> = {};
 const GET_TOOL_PATH: Record<string, string> = {};
 
 for (const dt of DOC_TYPES) {
   LIST_TOOL_PATH[dt.listName] = dt.path;
   LIST_TOOL_SLIM[dt.listName] = SLIM_FIELDS[dt.slimKey];
   LIST_TOOL_HINT[dt.listName] = dt.hintDe;
+  if (dt.statusEntity) LIST_TOOL_STATUS_ENTITY[dt.listName] = dt.statusEntity;
   GET_TOOL_PATH[dt.getName] = dt.path;
 }
+
 
 // --- Helper: unwrap nested API data ---
 
@@ -215,6 +228,16 @@ export async function handleDocumentReadTool(
       result.data = data;
     }
 
+    // Apply status preset filter (client-side)
+    if (filters.status_preset) {
+      const entity = LIST_TOOL_STATUS_ENTITY[toolName];
+      if (entity) {
+        data = applyStatusPreset(data, entity, filters.status_preset);
+        result.data = data;
+        result.meta.returned = data.length;
+      }
+    }
+
     // Aggregate: return aggregation result instead of data list
     if (filters.aggregate) {
       const aggResult = applyAggregate(data, filters.aggregate as AggregateOp);
@@ -237,6 +260,9 @@ export async function handleDocumentReadTool(
 
     // Build info string
     let info = `${result.meta.returned} Ergebnisse`;
+    if (filters.status_preset) {
+      info += ` (status_preset: ${filters.status_preset})`;
+    }
     if (result.meta.filtered_out > 0) {
       info += ` (${result.meta.filtered_out} geloeschte ausgeblendet). Fuer alle: include_deleted=true`;
     }

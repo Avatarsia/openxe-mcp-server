@@ -38,29 +38,29 @@ interface ActionEntry {
 
 const ACTION_REGISTRY: ActionEntry[] = [
   // === Stammdaten ===
-  { action: "list-addresses", label: "Kunden/Adressen auflisten (Filter: kundennummer, name, land)", category: "stammdaten", handler: "read", toolName: "openxe-list-addresses" },
+  { action: "list-addresses", label: "Kunden/Adressen auflisten [+Smart Filter] (Filter: kundennummer, name, land)", category: "stammdaten", handler: "read", toolName: "openxe-list-addresses" },
   { action: "get-address", label: "Adresse nach ID abrufen (alle Details)", category: "stammdaten", handler: "read", toolName: "openxe-get-address" },
-  { action: "list-articles", label: "Artikel auflisten (Filter: nummer, name_de; Include: verkaufspreise, lagerbestand)", category: "stammdaten", handler: "read", toolName: "openxe-list-articles" },
+  { action: "list-articles", label: "Artikel auflisten [+Smart Filter] (Filter: nummer, name_de; Include: verkaufspreise, lagerbestand)", category: "stammdaten", handler: "read", toolName: "openxe-list-articles" },
   { action: "get-article", label: "Artikel nach ID (alle Details + Preise + Lager)", category: "stammdaten", handler: "read", toolName: "openxe-get-article" },
   { action: "create-address", label: "Neuen Kunden anlegen (kundennummer=NEU fuer Autovergabe)", category: "stammdaten", handler: "address", toolName: "openxe-create-address" },
   { action: "edit-address", label: "Adresse bearbeiten", category: "stammdaten", handler: "address", toolName: "openxe-edit-address" },
   { action: "create-delivery-address", label: "Lieferadresse anlegen", category: "stammdaten", handler: "address", toolName: "openxe-create-delivery-address" },
   { action: "edit-delivery-address", label: "Lieferadresse bearbeiten", category: "stammdaten", handler: "address", toolName: "openxe-edit-delivery-address" },
   { action: "delete-delivery-address", label: "Lieferadresse loeschen", category: "stammdaten", handler: "address", toolName: "openxe-delete-delivery-address" },
-  { action: "list-categories", label: "Artikelkategorien", category: "stammdaten", handler: "read", toolName: "openxe-list-categories" },
-  { action: "list-shipping", label: "Versandarten", category: "stammdaten", handler: "read", toolName: "openxe-list-shipping-methods" },
-  { action: "list-files", label: "Dateien/Anhaenge auflisten", category: "stammdaten", handler: "read", toolName: "openxe-list-files" },
+  { action: "list-categories", label: "Artikelkategorien [+Smart Filter]", category: "stammdaten", handler: "read", toolName: "openxe-list-categories" },
+  { action: "list-shipping", label: "Versandarten [+Smart Filter]", category: "stammdaten", handler: "read", toolName: "openxe-list-shipping-methods" },
+  { action: "list-files", label: "Dateien/Anhaenge auflisten [+Smart Filter]", category: "stammdaten", handler: "read", toolName: "openxe-list-files" },
 
   // === Belege ===
-  { action: "list-orders", label: "Auftraege auflisten (Filter: belegnr, kundennummer, status, datum)", category: "belege", handler: "document-read", toolName: "openxe-list-orders" },
+  { action: "list-orders", label: "Auftraege auflisten [+Smart Filter] (Filter: belegnr, kundennummer, status, datum)", category: "belege", handler: "document-read", toolName: "openxe-list-orders" },
   { action: "get-order", label: "Auftrag nach ID (mit Positionen)", category: "belege", handler: "document-read", toolName: "openxe-get-order" },
-  { action: "list-invoices", label: "Rechnungen auflisten", category: "belege", handler: "document-read", toolName: "openxe-list-invoices" },
+  { action: "list-invoices", label: "Rechnungen auflisten [+Smart Filter]", category: "belege", handler: "document-read", toolName: "openxe-list-invoices" },
   { action: "get-invoice", label: "Rechnung nach ID (mit Positionen)", category: "belege", handler: "document-read", toolName: "openxe-get-invoice" },
-  { action: "list-quotes", label: "Angebote auflisten", category: "belege", handler: "document-read", toolName: "openxe-list-quotes" },
+  { action: "list-quotes", label: "Angebote auflisten [+Smart Filter]", category: "belege", handler: "document-read", toolName: "openxe-list-quotes" },
   { action: "get-quote", label: "Angebot nach ID", category: "belege", handler: "document-read", toolName: "openxe-get-quote" },
-  { action: "list-delivery-notes", label: "Lieferscheine auflisten", category: "belege", handler: "document-read", toolName: "openxe-list-delivery-notes" },
+  { action: "list-delivery-notes", label: "Lieferscheine auflisten [+Smart Filter]", category: "belege", handler: "document-read", toolName: "openxe-list-delivery-notes" },
   { action: "get-delivery-note", label: "Lieferschein nach ID", category: "belege", handler: "document-read", toolName: "openxe-get-delivery-note" },
-  { action: "list-credit-memos", label: "Gutschriften auflisten", category: "belege", handler: "document-read", toolName: "openxe-list-credit-memos" },
+  { action: "list-credit-memos", label: "Gutschriften auflisten [+Smart Filter]", category: "belege", handler: "document-read", toolName: "openxe-list-credit-memos" },
   { action: "get-credit-memo", label: "Gutschrift nach ID", category: "belege", handler: "document-read", toolName: "openxe-get-credit-memo" },
   { action: "create-order", label: "Neuen Auftrag erstellen", category: "belege", handler: "document", toolName: "openxe-create-order" },
   { action: "create-quote", label: "Neues Angebot erstellen", category: "belege", handler: "document", toolName: "openxe-create-quote" },
@@ -88,7 +88,7 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "clock-status", label: "Stechuhr-Status abfragen (ein-/ausgestempelt)", category: "zeiterfassung", handler: "time", toolName: "openxe-clock-status" },
   { action: "clock-action", label: "Ein-/Ausstempeln (kommen/gehen/pausestart/pausestop)", category: "zeiterfassung", handler: "time", toolName: "openxe-clock-action" },
   { action: "clock-summary", label: "Wochen-Zeituebersicht (Soll/Ist, Ueberstunden, Urlaub)", category: "zeiterfassung", handler: "time", toolName: "openxe-clock-summary" },
-  { action: "list-time-entries", label: "Zeiteintraege auflisten (Filter: adresse, projekt, von, bis)", category: "zeiterfassung", handler: "time", toolName: "openxe-list-time-entries" },
+  { action: "list-time-entries", label: "Zeiteintraege auflisten [+Smart Filter] (Filter: adresse, projekt, von, bis)", category: "zeiterfassung", handler: "time", toolName: "openxe-list-time-entries" },
   { action: "create-time-entry", label: "Zeiteintrag erstellen", category: "zeiterfassung", handler: "time", toolName: "openxe-create-time-entry" },
   { action: "edit-time-entry", label: "Zeiteintrag bearbeiten", category: "zeiterfassung", handler: "time", toolName: "openxe-edit-time-entry" },
   { action: "delete-time-entry", label: "Zeiteintrag loeschen", category: "zeiterfassung", handler: "time", toolName: "openxe-delete-time-entry" },
@@ -125,7 +125,7 @@ const DiscoverInput = z.object({
 export const DISCOVER_TOOL_DEFINITION: ToolDefinition = {
   name: "openxe-discover",
   description:
-    "Zeigt alle verfuegbaren OpenXE-Aktionen. Rufe dieses Tool zuerst auf um zu sehen was moeglich ist. Optional: category filter (stammdaten, belege, shop, system).",
+    "Zeigt alle verfuegbaren OpenXE-Aktionen inkl. Smart Filter Dokumentation. Rufe dieses Tool zuerst auf um zu sehen was moeglich ist. Optional: category filter (stammdaten, belege, business, shop, zeiterfassung, system).",
   inputSchema: zodToJsonSchema(DiscoverInput) as Record<string, unknown>,
 };
 
@@ -146,15 +146,30 @@ export function handleDiscover(args: Record<string, unknown>): ToolResult {
 
   const lines: string[] = [];
 
+  // Smart Filter documentation (shown at top for "alle" or when list categories are included)
+  if (category === "alle" || ["stammdaten", "belege"].includes(category as string)) {
+    lines.push("=== Smart Filter (verfuegbar auf allen list-* Aktionen) ===");
+    lines.push('where         Client-seitige Filter: {plz: {startsWith: "2"}}, {email: {empty: true}}, {name: {contains: "Mueller"}}');
+    lines.push("              Operatoren: equals, contains, startsWith, endsWith, gt, lt, gte, lte, range, empty, notEmpty");
+    lines.push('fields        Nur bestimmte Felder: ["kundennummer", "name", "plz"]');
+    lines.push('sort_field    Sortieren nach Feld (z.B. "gesamtsumme", "datum", "name")');
+    lines.push('sort_order    "asc" oder "desc"');
+    lines.push("limit         Max. Ergebnisse (z.B. 10 fuer Top-10)");
+    lines.push("format        Ausgabeformat: json, table, csv, ids");
+    lines.push('zeitraum      Datum-Shortcut: "heute", "diese-woche", "letzter-monat", "oktober-2025", "Q3-2025", "2025"');
+    lines.push('status_preset Status-Filter: "offen", "unbezahlt", "ueberfaellig", "bezahlt", "entwurf", "mahnkandidaten"');
+    lines.push('aggregate     Aggregation: "count", {sum: "gesamtsumme"}, {groupBy: "land", count: true}');
+    lines.push("");
+  }
+
   for (const cat of categories) {
     const entries = ACTION_REGISTRY.filter((e) => e.category === cat);
     if (entries.length === 0) continue;
 
     lines.push(`=== ${CATEGORY_LABELS[cat]} ===`);
     for (const entry of entries) {
-      const padded = entry.action.padEnd(24);
-      const suffix = entry.action.startsWith("list-") ? " (+include_deleted)" : "";
-      lines.push(`${padded}${entry.label}${suffix}`);
+      const padded = entry.action.padEnd(26);
+      lines.push(`${padded}${entry.label}`);
     }
     lines.push("");
   }
@@ -162,7 +177,8 @@ export function handleDiscover(args: Record<string, unknown>): ToolResult {
   lines.push("Nutze openxe mit action=<name> und params={...} um eine Aktion auszufuehren.");
 
   return {
-    content: [{ type: "text", text: lines.join("\n") }],
+    content: [{ type: "text", text: lines.join("
+") }],
   };
 }
 
@@ -182,7 +198,7 @@ const RouterInput = z.object({
 export const ROUTER_TOOL_DEFINITION: ToolDefinition = {
   name: "openxe",
   description:
-    "Fuehrt eine OpenXE-Aktion aus. Nutze openxe-discover um verfuegbare Aktionen zu sehen.",
+    "Fuehrt eine OpenXE-Aktion aus. Nutze openxe-discover um verfuegbare Aktionen zu sehen. Alle list-* Aktionen unterstuetzen Smart Filter (where, fields, sort, limit, format, zeitraum, status_preset, aggregate). Alle list-* Aktionen unterstuetzen Smart Filter (where, fields, sort, limit, format, zeitraum, status_preset, aggregate).",
   inputSchema: zodToJsonSchema(RouterInput) as Record<string, unknown>,
 };
 

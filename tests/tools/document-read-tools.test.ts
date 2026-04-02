@@ -141,4 +141,111 @@ describe("Document Read Tools", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Unknown");
   });
+
+  // --- status_preset integration tests ---
+
+  it("filters invoices by status_preset='offen' (excludes bezahlt)", async () => {
+    mockPaginatedGet([
+      { id: 1, belegnr: "RE-001", zahlungsstatus: "offen", name: "A", kundennummer: "K1" },
+      { id: 2, belegnr: "RE-002", zahlungsstatus: "bezahlt", name: "B", kundennummer: "K2" },
+      { id: 3, belegnr: "RE-003", zahlungsstatus: "offen", name: "C", kundennummer: "K3" },
+    ]);
+
+    const result = await handleDocumentReadTool(
+      "openxe-list-invoices",
+      { status_preset: "offen" },
+      mockClient as unknown as OpenXEClient
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.data).toHaveLength(2);
+    expect(parsed.data.map((d) => d.id)).toEqual([1, 3]);
+    expect(parsed._info).toContain("status_preset: offen");
+  });
+
+  it("filters invoices by status_preset='bezahlt'", async () => {
+    mockPaginatedGet([
+      { id: 1, belegnr: "RE-001", zahlungsstatus: "offen", name: "A", kundennummer: "K1" },
+      { id: 2, belegnr: "RE-002", zahlungsstatus: "bezahlt", name: "B", kundennummer: "K2" },
+    ]);
+
+    const result = await handleDocumentReadTool(
+      "openxe-list-invoices",
+      { status_preset: "bezahlt" },
+      mockClient as unknown as OpenXEClient
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.data).toHaveLength(1);
+    expect(parsed.data[0].id).toBe(2);
+  });
+
+  it("filters orders by status_preset='offen' (only freigegeben)", async () => {
+    mockPaginatedGet([
+      { id: 1, belegnr: "AU-001", status: "freigegeben", name: "A", kundennummer: "K1" },
+      { id: 2, belegnr: "AU-002", status: "abgeschlossen", name: "B", kundennummer: "K2" },
+      { id: 3, belegnr: "AU-003", status: "angelegt", name: "C", kundennummer: "K3" },
+    ]);
+
+    const result = await handleDocumentReadTool(
+      "openxe-list-orders",
+      { status_preset: "offen" },
+      mockClient as unknown as OpenXEClient
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.data).toHaveLength(1);
+    expect(parsed.data[0].id).toBe(1);
+  });
+
+  it("filters quotes by status_preset='offen' (freigegeben or angelegt)", async () => {
+    mockPaginatedGet([
+      { id: 1, belegnr: "AN-001", status: "freigegeben", name: "A", kundennummer: "K1" },
+      { id: 2, belegnr: "AN-002", status: "angelegt", name: "B", kundennummer: "K2" },
+      { id: 3, belegnr: "AN-003", status: "abgelehnt", name: "C", kundennummer: "K3" },
+    ]);
+
+    const result = await handleDocumentReadTool(
+      "openxe-list-quotes",
+      { status_preset: "offen" },
+      mockClient as unknown as OpenXEClient
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.data).toHaveLength(2);
+    expect(parsed.data.map((d) => d.id)).toEqual([1, 2]);
+  });
+
+  it("ignores unknown status_preset and returns all records", async () => {
+    mockPaginatedGet([
+      { id: 1, belegnr: "RE-001", zahlungsstatus: "offen", name: "A", kundennummer: "K1" },
+      { id: 2, belegnr: "RE-002", zahlungsstatus: "bezahlt", name: "B", kundennummer: "K2" },
+    ]);
+
+    const result = await handleDocumentReadTool(
+      "openxe-list-invoices",
+      { status_preset: "nonexistent" },
+      mockClient as unknown as OpenXEClient
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.data).toHaveLength(2);
+  });
+
+  it("ignores status_preset for entities without presets (delivery-notes)", async () => {
+    mockPaginatedGet([
+      { id: 1, belegnr: "LS-001", status: "freigegeben", name: "A", kundennummer: "K1" },
+      { id: 2, belegnr: "LS-002", status: "angelegt", name: "B", kundennummer: "K2" },
+    ]);
+
+    const result = await handleDocumentReadTool(
+      "openxe-list-delivery-notes",
+      { status_preset: "offen" },
+      mockClient as unknown as OpenXEClient
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    // No presets for delivery notes, so all records returned
+    expect(parsed.data).toHaveLength(2);
+  });
 });

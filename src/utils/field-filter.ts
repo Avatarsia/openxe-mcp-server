@@ -18,9 +18,10 @@ export async function fetchFilteredList(
     slimFields?: readonly string[];
     includeDeleted?: boolean;
     maxResults?: number;
+    skipSlim?: boolean;
   } = {}
 ): Promise<FilteredListResult> {
-  const { slimFields, includeDeleted = false, maxResults = MAX_LIST_RESULTS } = options;
+  const { slimFields, includeDeleted = false, maxResults = MAX_LIST_RESULTS, skipSlim = false } = options;
 
   let allRecords: any[] = [];
   let page = 1;
@@ -66,9 +67,9 @@ export async function fetchFilteredList(
   // Truncate to maxResults
   const { data: truncated, truncated: wasTruncated } = truncateWithWarning(allRecords, maxResults);
 
-  // Apply slim
+  // Apply slim (unless caller wants raw data for further filtering)
   let finalData = truncated;
-  if (slimFields) {
+  if (slimFields && !skipSlim) {
     finalData = applySlimMode(finalData, [...slimFields]) as any[];
   }
 
