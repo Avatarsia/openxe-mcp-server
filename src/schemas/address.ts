@@ -63,7 +63,7 @@ export const AddressCreateInput = z.object({
   internetseite: z.string().optional().describe("Website URL"),
   ansprechpartner: z.string().optional().describe("Contact person name"),
   abteilung: z.string().optional().describe("Department"),
-  anrede: z.string().optional().describe("Salutation (Herr, Frau)"),
+  anschreiben: z.string().optional().describe("Letter salutation / greeting (e.g. 'Sehr geehrte Frau Hoffmann')"),
   titel: z.string().optional().describe("Title (Dr., Prof.)"),
   adresszusatz: z.string().optional().describe("Address supplement / c/o"),
 

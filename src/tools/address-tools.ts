@@ -71,6 +71,11 @@ export function normalizeAddressFields(input: Record<string, any>): Record<strin
     // Misc aliases
     'birthday': 'geburtstag',
     'discount': 'rabatt',
+    // Salutation aliases → anschreiben (the actual DB column for letter salutation)
+    'anrede': 'anschreiben',
+    'salutation': 'anschreiben',
+    'briefanrede': 'anschreiben',
+    'grussformel': 'anschreiben',
   };
 
   for (const [wrong, correct] of Object.entries(fieldMap)) {
@@ -119,7 +124,7 @@ export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
       "Field names are auto-corrected (e.g. fax->telefax, website->internetseite, bic->swift, straße->strasse, nested bankverbindung->flat fields). " +
       "Required: typ, name. " +
       "Optional: vorname, firma, strasse, plz, ort, land, email, telefon, kundennummer (default 'NEU'), projekt, " +
-      "telefax, mobil, internetseite, ansprechpartner, abteilung, anrede, titel, adresszusatz, " +
+      "telefax, mobil, internetseite, ansprechpartner, abteilung, anschreiben (letter salutation, auto-mapped from anrede), titel, adresszusatz, " +
       "iban, swift, inhaber, bank, " +
       "zahlungszieltage, zahlungszieltageskonto, zahlungszielskonto, versandart, steuernummer, sonstiges. " +
       "Document delivery: angebot_email, auftrag_email, rechnungs_email, gutschrift_email, lieferschein_email, bestellung_email (per-doc-type email overrides), " +
