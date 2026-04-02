@@ -68,6 +68,10 @@ export async function handleAddressTool(
   switch (toolName) {
     case "openxe-create-address": {
       const input = AddressCreateInput.parse(args);
+      // Auto-set lieferantennummer to "NEU" when creating a supplier without explicit number
+      if (input.rolle && /lieferant/i.test(input.rolle) && !input.lieferantennummer) {
+        input.lieferantennummer = "NEU";
+      }
       const result = await client.legacyPost("AdresseCreate", input);
       return {
         content: [
