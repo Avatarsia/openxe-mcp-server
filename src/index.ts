@@ -162,7 +162,7 @@ async function main() {
         "- PayPal: paypal (E-Mail), paypalinhaber, paypalwaehrung",
         "- SEPA: mandatsreferenz, mandatsreferenzdatum, mandatsreferenzart, glaeubigeridentnr",
         "- Sonstiges: geburtstag (YYYY-MM-DD), rabatt (%), kennung, bundesland, infoauftragserfassung",
-        "- WICHTIG: strasse (nicht straße), telefax (nicht fax), internetseite (nicht webseite/internet)",
+        "- WICHTIG: strasse (nicht straße), telefax (nicht fax), internetseite (nicht webseite/internet), anschreiben (nicht anrede — anrede existiert nicht als DB-Spalte!), typ fuer Herr/Frau/Firma",
         "- Lieferadressen separat anlegen: create-delivery-address mit adresse (Parent-ID)",
         "- Ansprechpartner ist ein Feld auf der Adresse, kein separates Objekt",
         "",
