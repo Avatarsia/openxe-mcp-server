@@ -19,11 +19,85 @@ interface ToolResult {
   isError?: boolean;
 }
 
+// Normalize common LLM field name mistakes before Zod parsing
+export function normalizeAddressFields(input: Record<string, any>): Record<string, any> {
+  const normalized = { ...input };
+
+  // Field name mappings (wrong -> correct)
+  const fieldMap: Record<string, string | undefined> = {
+    'fax': 'telefax',
+    'telefaxnummer': 'telefax',
+    'handy': 'mobil',
+    'mobiltelefon': 'mobil',
+    'mobilnummer': 'mobil',
+    'webseite': 'internetseite',
+    'website': 'internetseite',
+    'internet': 'internetseite',
+    'homepage': 'internetseite',
+    'web': 'internetseite',
+    'url': 'internetseite',
+    'bank_name': 'bank',
+    'bankname': 'bank',
+    'bank_inhaber': 'inhaber',
+    'kontoinhaber': 'inhaber',
+    'kontonummer': 'konto',
+    'bic': 'swift',
+    'ansprechpartner_name': 'ansprechpartner',
+    'kontaktperson': 'ansprechpartner',
+    'kontakt': 'ansprechpartner',
+    'strasse_nr': 'strasse',
+    'hausnummer': undefined, // ignore, part of strasse
+  };
+
+  for (const [wrong, correct] of Object.entries(fieldMap)) {
+    if (wrong in normalized && correct && !(correct in normalized)) {
+      normalized[correct] = normalized[wrong];
+    }
+    if (wrong in normalized) {
+      delete normalized[wrong];
+    }
+  }
+
+  // Handle "straße" -> "strasse" (Unicode normalization)
+  if ('straße' in normalized && !('strasse' in normalized)) {
+    normalized.strasse = normalized['straße'];
+    delete normalized['straße'];
+  }
+
+  // Handle nested bankverbindung object -> flat fields
+  if (normalized.bankverbindung && typeof normalized.bankverbindung === 'object') {
+    const bv = normalized.bankverbindung as Record<string, any>;
+    if (bv.iban && !normalized.iban) normalized.iban = bv.iban;
+    if (bv.swift && !normalized.swift) normalized.swift = bv.swift;
+    if (bv.bic && !normalized.swift) normalized.swift = bv.bic;
+    if (bv.inhaber && !normalized.inhaber) normalized.inhaber = bv.inhaber;
+    if (bv.bankname && !normalized.bank) normalized.bank = bv.bankname;
+    if (bv.bank && !normalized.bank) normalized.bank = bv.bank;
+    delete normalized.bankverbindung;
+  }
+
+  // Remove fields that don't exist in DB (silently dropped, would be ignored anyway)
+  const invalidFields = ['hausnummer', 'ansprechposition', 'ansprech_email', 'ansprech_telefon', 'ansprech_fax',
+    'lieferadresse_name', 'lieferadresse_strasse', 'lieferadresse_hausnummer', 'lieferadresse_plz',
+    'lieferadresse_ort', 'land_lieferung', 'zahlungsbedingungen', 'skonto', 'firma_zusatz'];
+  for (const f of invalidFields) {
+    delete normalized[f];
+  }
+
+  return normalized;
+}
+
 export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-create-address",
     description:
-      "Create a new address (customer, supplier, employee) in OpenXE. Uses Legacy API because REST v1 POST is broken. Required: typ, name. Optional: vorname, firma, strasse, plz, ort, land, email, telefon, kundennummer (default 'NEU' = auto-generate next number), projekt.",
+      "Create a new address (customer, supplier, employee) in OpenXE. Uses Legacy API because REST v1 POST is broken. " +
+      "Field names are auto-corrected (e.g. fax->telefax, website->internetseite, bic->swift, straße->strasse, nested bankverbindung->flat fields). " +
+      "Required: typ, name. " +
+      "Optional: vorname, firma, strasse, plz, ort, land, email, telefon, kundennummer (default 'NEU'), projekt, " +
+      "telefax, mobil, internetseite, ansprechpartner, abteilung, anrede, titel, adresszusatz, " +
+      "iban, swift, inhaber, bank, " +
+      "zahlungszieltage, zahlungszieltageskonto, zahlungszielskonto, versandart, steuernummer, sonstiges.",
     inputSchema: zodToJsonSchema(AddressCreateInput) as Record<string, unknown>,
   },
   {
@@ -67,7 +141,9 @@ export async function handleAddressTool(
 ): Promise<ToolResult> {
   switch (toolName) {
     case "openxe-create-address": {
-      const input = AddressCreateInput.parse(args);
+      const raw = args as Record<string, any>;
+      const normalized = normalizeAddressFields(raw);
+      const input = AddressCreateInput.parse(normalized);
       // Auto-set lieferantennummer to "NEU" when creating a supplier without explicit number
       if (input.rolle && /lieferant/i.test(input.rolle) && !input.lieferantennummer) {
         input.lieferantennummer = "NEU";
@@ -84,7 +160,9 @@ export async function handleAddressTool(
     }
 
     case "openxe-edit-address": {
-      const input = AddressEditInput.parse(args);
+      const raw = args as Record<string, any>;
+      const normalized = normalizeAddressFields(raw);
+      const input = AddressEditInput.parse(normalized);
       const { id, ...fields } = input;
 
       // Try REST v1 PUT first (confirmed working via live testing)

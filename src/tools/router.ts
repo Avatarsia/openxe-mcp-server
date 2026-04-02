@@ -44,7 +44,7 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "get-address", label: "Adresse nach ID abrufen (alle Details)", category: "stammdaten", handler: "read", toolName: "openxe-get-address" },
   { action: "list-articles", label: "Artikel auflisten [+Smart Filter] (Filter: nummer, name_de; Include: verkaufspreise, lagerbestand)", category: "stammdaten", handler: "read", toolName: "openxe-list-articles" },
   { action: "get-article", label: "Artikel nach ID (alle Details + Preise + Lager + Einkaufspreise via includeEinkaufspreise)", category: "stammdaten", handler: "read", toolName: "openxe-get-article" },
-  { action: "create-address", label: "Neuen Kunden anlegen (kundennummer=NEU fuer Autovergabe)", category: "stammdaten", handler: "address", toolName: "openxe-create-address" },
+  { action: "create-address", label: "Kunde/Lieferant anlegen (alle Felder: name, typ, strasse, plz, ort, land, email, telefon, telefax, mobil, internetseite, ansprechpartner, iban, swift, inhaber, bank, zahlungszieltage, ustid, rolle, lieferantennummer)", category: "stammdaten", handler: "address", toolName: "openxe-create-address" },
   { action: "edit-address", label: "Adresse bearbeiten", category: "stammdaten", handler: "address", toolName: "openxe-edit-address" },
   { action: "create-delivery-address", label: "Lieferadresse anlegen", category: "stammdaten", handler: "address", toolName: "openxe-create-delivery-address" },
   { action: "edit-delivery-address", label: "Lieferadresse bearbeiten", category: "stammdaten", handler: "address", toolName: "openxe-edit-delivery-address" },

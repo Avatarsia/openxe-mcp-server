@@ -56,6 +56,30 @@ export const AddressCreateInput = z.object({
   rolle: z.string().optional().describe("Role: Kunde, Lieferant, or both"),
   waehrung: z.string().optional().describe("Default currency"),
   sprache: z.string().optional().describe("Language (e.g. deutsch, englisch)"),
+
+  // Contact
+  telefax: z.string().optional().describe("Fax number"),
+  mobil: z.string().optional().describe("Mobile phone"),
+  internetseite: z.string().optional().describe("Website URL"),
+  ansprechpartner: z.string().optional().describe("Contact person name"),
+  abteilung: z.string().optional().describe("Department"),
+  anrede: z.string().optional().describe("Salutation (Herr, Frau)"),
+  titel: z.string().optional().describe("Title (Dr., Prof.)"),
+  adresszusatz: z.string().optional().describe("Address supplement / c/o"),
+
+  // Bank details
+  iban: z.string().optional().describe("IBAN"),
+  swift: z.string().optional().describe("BIC/SWIFT code"),
+  inhaber: z.string().optional().describe("Bank account holder name"),
+  bank: z.string().optional().describe("Bank name"),
+
+  // Payment terms
+  zahlungszieltage: z.string().optional().describe("Payment term in days (e.g. '30')"),
+  zahlungszieltageskonto: z.string().optional().describe("Skonto days (e.g. '10')"),
+  zahlungszielskonto: z.string().optional().describe("Skonto percentage (e.g. '2')"),
+  versandart: z.string().optional().describe("Default shipping method"),
+  steuernummer: z.string().optional().describe("Tax number (Steuernummer)"),
+  sonstiges: z.string().optional().describe("Notes / additional info"),
 });
 
 export const AddressEditInput = z.object({
