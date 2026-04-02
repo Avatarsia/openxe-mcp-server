@@ -199,7 +199,10 @@ const MONTH_NAMES: Record<string, number> = {
 };
 
 function fmtDate(d: Date): string {
-  return d.toISOString().split("T")[0];
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }
 
 /**
@@ -279,4 +282,51 @@ export function parseZeitraum(zeitraum: string): { von: string; bis: string } {
       throw new Error(`Unbekannter Zeitraum: ${zeitraum}`);
     }
   }
+}
+
+// --- Status Presets ---
+
+/**
+ * Per-entity status filter presets. Each entry maps a preset name to a
+ * filter function that accepts a single record and returns true/false.
+ */
+export const STATUS_PRESETS: Record<string, Record<string, (record: any) => boolean>> = {
+  orders: {
+    offen: (r) => r.status === "freigegeben",
+    entwurf: (r) => r.status === "angelegt" || !r.belegnr || r.belegnr === "",
+  },
+  invoices: {
+    offen: (r) => r.zahlungsstatus !== "bezahlt",
+    unbezahlt: (r) => r.zahlungsstatus !== "bezahlt",
+    bezahlt: (r) => r.zahlungsstatus === "bezahlt",
+    ueberfaellig: (r) => {
+      if (r.zahlungsstatus === "bezahlt") return false;
+      const diff = (Date.now() - new Date(r.datum).getTime()) / 86400000;
+      return diff > 30;
+    },
+    entwurf: (r) => !r.belegnr || r.belegnr === "" || r.belegnr === null || r.status === "angelegt",
+    mahnkandidaten: (r) => {
+      if (r.zahlungsstatus === "bezahlt") return false;
+      if (String(r.mahnwesen_gesperrt || "0") === "1") return false;
+      const diff = (Date.now() - new Date(r.datum).getTime()) / 86400000;
+      return diff > 14;
+    },
+  },
+  quotes: {
+    offen: (r) => r.status === "freigegeben" || r.status === "angelegt",
+    angenommen: (r) => r.status === "beauftragt",
+    abgelehnt: (r) => r.status === "abgelehnt",
+  },
+};
+
+/**
+ * Apply a status preset filter to a set of records.
+ * Returns all records unchanged if entity or preset is unknown.
+ */
+export function applyStatusPreset(records: any[], entity: string, preset: string): any[] {
+  const entityPresets = STATUS_PRESETS[entity];
+  if (!entityPresets) return records;
+  const filterFn = entityPresets[preset];
+  if (!filterFn) return records;
+  return records.filter(filterFn);
 }

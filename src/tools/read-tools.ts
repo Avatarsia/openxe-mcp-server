@@ -220,7 +220,7 @@ export async function handleReadTool(
   switch (name) {
     case "openxe-list-addresses": {
       const args = ListAddressesInput.parse(input);
-      const { name: nameFilter, email, land, include_deleted, aggregate, ...serverParams } = args;
+      const { name: nameFilter, email, land, include_deleted, aggregate, format, ...serverParams } = args;
 
       // Only kundennummer goes to the server
       const apiParams: Record<string, string | number | undefined> = {};
@@ -265,7 +265,7 @@ export async function handleReadTool(
       result.meta.returned = truncated.length;
       result.meta.truncated = wasTruncated || result.meta.truncated;
 
-      return buildListResponse(result, "Fuer alle Details eines Eintrags nutze openxe-get-address mit der ID.");
+      return buildListResponse(result, "Fuer alle Details eines Eintrags nutze openxe-get-address mit der ID.", format);
     }
 
     case "openxe-get-address": {
@@ -280,7 +280,7 @@ export async function handleReadTool(
 
     case "openxe-list-articles": {
       const args = ListArticlesInput.parse(input);
-      const { include_deleted: includeDeletedArt, page: _p, items: _i, aggregate: aggArt, ...filterArgs } = args;
+      const { include_deleted: includeDeletedArt, page: _p, items: _i, aggregate: aggArt, format: fmtArt, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.name_de) apiParams.name_de = filterArgs.name_de;
       if (filterArgs.nummer) apiParams.nummer = filterArgs.nummer;
@@ -298,7 +298,7 @@ export async function handleReadTool(
         return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
       }
 
-      return buildListResponse(result, "Fuer alle Details eines Artikels nutze openxe-get-article mit der ID.");
+      return buildListResponse(result, "Fuer alle Details eines Artikels nutze openxe-get-article mit der ID.", fmtArt);
     }
 
     case "openxe-get-article": {

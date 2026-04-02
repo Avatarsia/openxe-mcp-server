@@ -62,6 +62,10 @@ import {
   handleBusinessQueryTool,
 } from "./tools/business-query-tools.js";
 import {
+  BATCH_PDF_TOOL_DEFINITION,
+  handleBatchPDFTool,
+} from "./tools/batch-pdf-tools.js";
+import {
   DASHBOARD_TOOL_DEFINITIONS,
   handleDashboardTool,
 } from "./tools/dashboard-tools.js";
@@ -209,6 +213,7 @@ async function main() {
     ...READ_TOOL_DEFINITIONS,
     ...DASHBOARD_TOOL_DEFINITIONS,
     BUSINESS_QUERY_TOOL_DEFINITION,
+    BATCH_PDF_TOOL_DEFINITION,
   ];
 
   const ROUTER_TOOLS = [
@@ -283,6 +288,9 @@ async function main() {
     }
     if (name === "openxe-business-query") {
       return handleBusinessQueryTool(toolArgs, client) as Promise<ServerResult>;
+    }
+    if (name === "openxe-batch-pdf") {
+      return handleBatchPDFTool(name, toolArgs, client) as Promise<ServerResult>;
     }
 
     return {

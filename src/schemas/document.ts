@@ -163,3 +163,29 @@ export const BelegPDFInput = z.object({
     .describe("Document type"),
   id: z.number().int().positive().describe("Document ID"),
 });
+
+/** Where-clause for filtering documents (passed as query params to REST v1). */
+const WhereClause = z.record(z.string()).describe(
+  "Key-value filter (z.B. {status: 'freigegeben', kundennummer: '10001'})"
+);
+
+export const BatchPDFInput = z.object({
+  typ: z
+    .enum(["rechnung", "auftrag", "angebot", "lieferschein", "gutschrift"])
+    .describe("Belegtyp"),
+  ids: z
+    .array(z.number().int().positive())
+    .optional()
+    .describe("Explizite Liste von Beleg-IDs"),
+  status_preset: z
+    .string()
+    .optional()
+    .describe("Status-Filter (z.B. 'freigegeben', 'versendet')"),
+  zeitraum: z
+    .string()
+    .optional()
+    .describe("Zeitraum als Datum-ab (YYYY-MM-DD). Filtert datum >= Wert"),
+  where: WhereClause.optional().describe(
+    "Beliebige REST-v1 Filter als Key-Value-Paare"
+  ),
+});

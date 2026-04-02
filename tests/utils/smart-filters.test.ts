@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { applyWhere, applySort, applyLimit, pickFields, applyFields, parseZeitraum, WhereClause } from "../../src/utils/smart-filters.js";
+import { applyWhere, applySort, applyLimit, pickFields, applyFields, parseZeitraum, applyAggregate, applyStatusPreset, STATUS_PRESETS, WhereClause, AggregateOp } from "../../src/utils/smart-filters.js";
 
 const sampleRecords = [
   { id: 1, name: "Alpha GmbH", city: "Berlin", amount: "100.50", status: "active", email: "alpha@test.de" },
@@ -205,5 +205,338 @@ describe("applyFields", () => {
       { id: 4, city: "Hamburg" },
       { id: 5, city: "Frankfurt" },
     ]);
+  });
+});
+
+// --- parseZeitraum tests ---
+
+describe("parseZeitraum", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function withFakeDate(isoDate: string, fn: () => void) {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(isoDate + "T12:00:00Z"));
+    fn();
+  }
+
+  it("heute: returns today's date for both von and bis", () => {
+    withFakeDate("2025-10-15", () => {
+      const result = parseZeitraum("heute");
+      expect(result).toEqual({ von: "2025-10-15", bis: "2025-10-15" });
+    });
+  });
+
+  it("diese-woche: returns Monday to Sunday of current week", () => {
+    // 2025-10-15 is a Wednesday
+    withFakeDate("2025-10-15", () => {
+      const result = parseZeitraum("diese-woche");
+      expect(result).toEqual({ von: "2025-10-13", bis: "2025-10-19" });
+    });
+  });
+
+  it("diese-woche: works when today is Monday", () => {
+    // 2025-10-13 is a Monday
+    withFakeDate("2025-10-13", () => {
+      const result = parseZeitraum("diese-woche");
+      expect(result).toEqual({ von: "2025-10-13", bis: "2025-10-19" });
+    });
+  });
+
+  it("diese-woche: works when today is Sunday", () => {
+    // 2025-10-19 is a Sunday
+    withFakeDate("2025-10-19", () => {
+      const result = parseZeitraum("diese-woche");
+      expect(result).toEqual({ von: "2025-10-13", bis: "2025-10-19" });
+    });
+  });
+
+  it("dieser-monat: returns first and last day of current month", () => {
+    withFakeDate("2025-10-15", () => {
+      const result = parseZeitraum("dieser-monat");
+      expect(result).toEqual({ von: "2025-10-01", bis: "2025-10-31" });
+    });
+  });
+
+  it("dieser-monat: handles February (non-leap year)", () => {
+    withFakeDate("2025-02-10", () => {
+      const result = parseZeitraum("dieser-monat");
+      expect(result).toEqual({ von: "2025-02-01", bis: "2025-02-28" });
+    });
+  });
+
+  it("dieser-monat: handles February (leap year)", () => {
+    withFakeDate("2024-02-10", () => {
+      const result = parseZeitraum("dieser-monat");
+      expect(result).toEqual({ von: "2024-02-01", bis: "2024-02-29" });
+    });
+  });
+
+  it("letzter-monat: returns first and last day of previous month", () => {
+    withFakeDate("2025-10-15", () => {
+      const result = parseZeitraum("letzter-monat");
+      expect(result).toEqual({ von: "2025-09-01", bis: "2025-09-30" });
+    });
+  });
+
+  it("letzter-monat: handles January (wraps to previous year December)", () => {
+    withFakeDate("2025-01-15", () => {
+      const result = parseZeitraum("letzter-monat");
+      expect(result).toEqual({ von: "2024-12-01", bis: "2024-12-31" });
+    });
+  });
+
+  it("letzte-7-tage: returns 7 days ago to today", () => {
+    withFakeDate("2025-10-15", () => {
+      const result = parseZeitraum("letzte-7-tage");
+      expect(result).toEqual({ von: "2025-10-08", bis: "2025-10-15" });
+    });
+  });
+
+  it("letzte-30-tage: returns 30 days ago to today", () => {
+    withFakeDate("2025-10-15", () => {
+      const result = parseZeitraum("letzte-30-tage");
+      expect(result).toEqual({ von: "2025-09-15", bis: "2025-10-15" });
+    });
+  });
+
+  it("letzte-90-tage: returns 90 days ago to today", () => {
+    withFakeDate("2025-10-15", () => {
+      const result = parseZeitraum("letzte-90-tage");
+      expect(result).toEqual({ von: "2025-07-17", bis: "2025-10-15" });
+    });
+  });
+
+  // --- Named month formats ---
+
+  it("oktober-2025: returns October 2025 range", () => {
+    const result = parseZeitraum("oktober-2025");
+    expect(result).toEqual({ von: "2025-10-01", bis: "2025-10-31" });
+  });
+
+  it("februar-2024: returns February 2024 (leap year)", () => {
+    const result = parseZeitraum("februar-2024");
+    expect(result).toEqual({ von: "2024-02-01", bis: "2024-02-29" });
+  });
+
+  it("januar-2025: returns January 2025", () => {
+    const result = parseZeitraum("januar-2025");
+    expect(result).toEqual({ von: "2025-01-01", bis: "2025-01-31" });
+  });
+
+  it("dezember-2025: returns December 2025", () => {
+    const result = parseZeitraum("dezember-2025");
+    expect(result).toEqual({ von: "2025-12-01", bis: "2025-12-31" });
+  });
+
+  it("month-year is case-insensitive", () => {
+    const result = parseZeitraum("Oktober-2025");
+    expect(result).toEqual({ von: "2025-10-01", bis: "2025-10-31" });
+  });
+
+  // --- Quarter formats ---
+
+  it("Q1-2025: returns Jan-Mar 2025", () => {
+    const result = parseZeitraum("Q1-2025");
+    expect(result).toEqual({ von: "2025-01-01", bis: "2025-03-31" });
+  });
+
+  it("Q2-2025: returns Apr-Jun 2025", () => {
+    const result = parseZeitraum("Q2-2025");
+    expect(result).toEqual({ von: "2025-04-01", bis: "2025-06-30" });
+  });
+
+  it("Q3-2025: returns Jul-Sep 2025", () => {
+    const result = parseZeitraum("Q3-2025");
+    expect(result).toEqual({ von: "2025-07-01", bis: "2025-09-30" });
+  });
+
+  it("Q4-2025: returns Oct-Dec 2025", () => {
+    const result = parseZeitraum("Q4-2025");
+    expect(result).toEqual({ von: "2025-10-01", bis: "2025-12-31" });
+  });
+
+  it("quarter is case-insensitive", () => {
+    const result = parseZeitraum("q3-2025");
+    expect(result).toEqual({ von: "2025-07-01", bis: "2025-09-30" });
+  });
+
+  // --- Full year ---
+
+  it("2025: returns full year range", () => {
+    const result = parseZeitraum("2025");
+    expect(result).toEqual({ von: "2025-01-01", bis: "2025-12-31" });
+  });
+
+  it("2024: returns full year range", () => {
+    const result = parseZeitraum("2024");
+    expect(result).toEqual({ von: "2024-01-01", bis: "2024-12-31" });
+  });
+
+  // --- Error handling ---
+
+  it("throws for unknown zeitraum string", () => {
+    expect(() => parseZeitraum("gibberish")).toThrow("Unbekannter Zeitraum: gibberish");
+  });
+
+  it("throws for invalid quarter number", () => {
+    expect(() => parseZeitraum("Q5-2025")).toThrow("Unbekannter Zeitraum");
+  });
+
+  it("throws for empty string", () => {
+    expect(() => parseZeitraum("")).toThrow("Unbekannter Zeitraum");
+  });
+});
+
+// --- applyAggregate tests ---
+
+describe("applyAggregate", () => {
+  const invoiceRecords = [
+    { id: 1, belegnr: "RE-001", soll: "100.50", status: "bezahlt", land: "DE" },
+    { id: 2, belegnr: "RE-002", soll: "250.00", status: "offen", land: "AT" },
+    { id: 3, belegnr: "RE-003", soll: "50.75", status: "bezahlt", land: "DE" },
+    { id: 4, belegnr: "RE-004", soll: "999.99", status: "offen", land: "DE" },
+    { id: 5, belegnr: "RE-005", soll: "0.00", status: "storniert", land: "AT" },
+  ];
+
+  // --- count ---
+  it("count: returns total number of records", () => {
+    const result = applyAggregate(invoiceRecords, "count");
+    expect(result).toEqual({ count: 5 });
+  });
+
+  it("count: returns 0 for empty array", () => {
+    const result = applyAggregate([], "count");
+    expect(result).toEqual({ count: 0 });
+  });
+
+  // --- sum ---
+  it("sum: sums a numeric field across all records", () => {
+    const result = applyAggregate(invoiceRecords, { sum: "soll" });
+    expect(result).toEqual({ sum: 1401.24, field: "soll", count: 5 });
+  });
+
+  it("sum: returns 0 for empty array", () => {
+    const result = applyAggregate([], { sum: "soll" });
+    expect(result).toEqual({ sum: 0, field: "soll", count: 0 });
+  });
+
+  it("sum: handles non-numeric values as 0", () => {
+    const records = [
+      { id: 1, val: "abc" },
+      { id: 2, val: "10.50" },
+    ];
+    const result = applyAggregate(records, { sum: "val" });
+    expect(result).toEqual({ sum: 10.5, field: "val", count: 2 });
+  });
+
+  it("sum: rounds to 2 decimal places", () => {
+    const records = [
+      { id: 1, val: "0.1" },
+      { id: 2, val: "0.2" },
+    ];
+    const result = applyAggregate(records, { sum: "val" });
+    expect(result.sum).toBe(0.3);
+  });
+
+  // --- avg ---
+  it("avg: calculates average of a numeric field", () => {
+    const result = applyAggregate(invoiceRecords, { avg: "soll" });
+    expect(result).toEqual({ avg: 280.25, field: "soll", count: 5 });
+  });
+
+  it("avg: returns 0 for empty array", () => {
+    const result = applyAggregate([], { avg: "soll" });
+    expect(result).toEqual({ avg: 0, field: "soll", count: 0 });
+  });
+
+  it("avg: rounds to 2 decimal places", () => {
+    const records = [
+      { id: 1, val: "10" },
+      { id: 2, val: "20" },
+      { id: 3, val: "30" },
+    ];
+    const result = applyAggregate(records, { avg: "val" });
+    expect(result.avg).toBe(20);
+  });
+
+  // --- min ---
+  it("min: finds the minimum value of a numeric field", () => {
+    const result = applyAggregate(invoiceRecords, { min: "soll" });
+    expect(result).toEqual({ min: 0, field: "soll" });
+  });
+
+  it("min: works with positive-only values", () => {
+    const records = [
+      { id: 1, val: "42.5" },
+      { id: 2, val: "7.3" },
+      { id: 3, val: "100" },
+    ];
+    const result = applyAggregate(records, { min: "val" });
+    expect(result.min).toBe(7.3);
+  });
+
+  // --- max ---
+  it("max: finds the maximum value of a numeric field", () => {
+    const result = applyAggregate(invoiceRecords, { max: "soll" });
+    expect(result).toEqual({ max: 999.99, field: "soll" });
+  });
+
+  it("max: works with a single record", () => {
+    const records = [{ id: 1, val: "55.5" }];
+    const result = applyAggregate(records, { max: "val" });
+    expect(result.max).toBe(55.5);
+  });
+
+  // --- groupBy ---
+  it("groupBy: groups records by field with count", () => {
+    const result = applyAggregate(invoiceRecords, { groupBy: "status" });
+    expect(result.groupBy).toBe("status");
+    expect(result.groups.bezahlt.count).toBe(2);
+    expect(result.groups.offen.count).toBe(2);
+    expect(result.groups.storniert.count).toBe(1);
+    // No sum key when sum is not specified
+    expect(result.groups.bezahlt.sum).toBeUndefined();
+  });
+
+  it("groupBy: groups with sum aggregation", () => {
+    const result = applyAggregate(invoiceRecords, { groupBy: "status", sum: "soll" });
+    expect(result.groupBy).toBe("status");
+    expect(result.groups.bezahlt).toEqual({ count: 2, sum: 151.25 });
+    expect(result.groups.offen).toEqual({ count: 2, sum: 1249.99 });
+    expect(result.groups.storniert).toEqual({ count: 1, sum: 0 });
+  });
+
+  it("groupBy: groups by land", () => {
+    const result = applyAggregate(invoiceRecords, { groupBy: "land", sum: "soll" });
+    expect(result.groups.DE).toEqual({ count: 3, sum: 1151.24 });
+    expect(result.groups.AT).toEqual({ count: 2, sum: 250 });
+  });
+
+  it("groupBy: uses '(leer)' for empty/missing group keys", () => {
+    const records = [
+      { id: 1, cat: "A", val: "10" },
+      { id: 2, cat: "", val: "20" },
+      { id: 3, val: "30" },
+    ];
+    const result = applyAggregate(records, { groupBy: "cat" });
+    expect(result.groups.A.count).toBe(1);
+    expect(result.groups["(leer)"].count).toBe(2);
+  });
+
+  it("groupBy: rounds sums to 2 decimal places", () => {
+    const records = [
+      { id: 1, cat: "X", val: "0.1" },
+      { id: 2, cat: "X", val: "0.2" },
+    ];
+    const result = applyAggregate(records, { groupBy: "cat", sum: "val" });
+    expect(result.groups.X.sum).toBe(0.3);
+  });
+
+  // --- unknown op ---
+  it("returns error for unknown aggregate operation", () => {
+    const result = applyAggregate(invoiceRecords, { unknown: "field" } as any);
+    expect(result).toEqual({ error: "Unknown aggregate operation" });
   });
 });
