@@ -30,7 +30,7 @@ export function applyWhere(records: any[], where: WhereClause): any[] {
           case "lt": if (numValue >= Number(target)) return false; break;
           case "gte": if (numValue < Number(target)) return false; break;
           case "lte": if (numValue > Number(target)) return false; break;
-          case "range": if (value < String(target[0]) || value > String(target[1])) return false; break;
+          case "range": { const arr = target as [string, string]; if (value < String(arr[0]) || value > String(arr[1])) return false; break; }
           case "empty": if (target === true && value !== "") return false; if (target === false && value === "") return false; break;
           case "notEmpty": if (target === true && value === "") return false; break;
         }

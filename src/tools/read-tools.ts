@@ -316,7 +316,7 @@ export async function handleReadTool(
 
     case "openxe-list-categories": {
       const args = ListCategoriesInput.parse(input);
-      const { include_deleted: includeDeletedCat, page: _p, items: _i, aggregate: aggCat, ...filterArgs } = args;
+      const { include_deleted: includeDeletedCat, page: _p, items: _i, aggregate: aggCat, format: fmtCat, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.bezeichnung) apiParams.bezeichnung = filterArgs.bezeichnung;
       if (filterArgs.parent !== undefined) apiParams.parent = filterArgs.parent;
@@ -332,12 +332,12 @@ export async function handleReadTool(
         return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
       }
 
-      return buildListResponse(result, "Fuer Details einer Kategorie nutze die jeweilige Kategorie-ID.");
+      return buildListResponse(result, "Fuer Details einer Kategorie nutze die jeweilige Kategorie-ID.", fmtCat);
     }
 
     case "openxe-list-shipping-methods": {
       const args = ListShippingMethodsInput.parse(input);
-      const { include_deleted: includeDeletedShip, page: _p, items: _i, aggregate: aggShip } = args;
+      const { include_deleted: includeDeletedShip, page: _p, items: _i, aggregate: aggShip, format: fmtShip } = args;
 
       const result = await fetchFilteredList(client, "/v1/versandarten", {}, {
         slimFields: SLIM_FIELDS.shippingMethod,
@@ -349,12 +349,12 @@ export async function handleReadTool(
         return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
       }
 
-      return buildListResponse(result, "Versandarten-Liste. Nutze die ID fuer Zuordnungen.");
+      return buildListResponse(result, "Versandarten-Liste. Nutze die ID fuer Zuordnungen.", fmtShip);
     }
 
     case "openxe-list-files": {
       const args = ListFilesInput.parse(input);
-      const { include_deleted: includeDeletedFile, page: _p, items: _i, aggregate: aggFile, ...filterArgs } = args;
+      const { include_deleted: includeDeletedFile, page: _p, items: _i, aggregate: aggFile, format: fmtFile, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.objekt) apiParams.objekt = filterArgs.objekt;
       if (filterArgs.parameter) apiParams.parameter = filterArgs.parameter;
@@ -370,7 +370,7 @@ export async function handleReadTool(
         return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
       }
 
-      return buildListResponse(result, "Datei-Liste. Nutze die ID fuer weitere Operationen.");
+      return buildListResponse(result, "Datei-Liste. Nutze die ID fuer weitere Operationen.", fmtFile);
     }
 
     default:

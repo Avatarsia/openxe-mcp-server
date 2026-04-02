@@ -540,3 +540,156 @@ describe("applyAggregate", () => {
     expect(result).toEqual({ error: "Unknown aggregate operation" });
   });
 });
+
+// --- STATUS_PRESETS & applyStatusPreset tests ---
+
+describe("STATUS_PRESETS", () => {
+  it("has presets for orders, invoices, and quotes", () => {
+    expect(STATUS_PRESETS).toHaveProperty("orders");
+    expect(STATUS_PRESETS).toHaveProperty("invoices");
+    expect(STATUS_PRESETS).toHaveProperty("quotes");
+  });
+
+  it("orders.offen matches only freigegeben", () => {
+    const fn = STATUS_PRESETS.orders["offen"];
+    expect(fn({ status: "freigegeben" })).toBe(true);
+    expect(fn({ status: "abgeschlossen" })).toBe(false);
+    expect(fn({ status: "angelegt" })).toBe(false);
+  });
+
+  it("orders.entwurf matches angelegt or missing belegnr", () => {
+    const fn = STATUS_PRESETS.orders["entwurf"];
+    expect(fn({ status: "angelegt", belegnr: "AU-001" })).toBe(true);
+    expect(fn({ status: "freigegeben", belegnr: "" })).toBe(true);
+    expect(fn({ status: "freigegeben", belegnr: "AU-001" })).toBe(false);
+  });
+
+  it("invoices.offen excludes bezahlt", () => {
+    const fn = STATUS_PRESETS.invoices["offen"];
+    expect(fn({ zahlungsstatus: "offen" })).toBe(true);
+    expect(fn({ zahlungsstatus: "bezahlt" })).toBe(false);
+  });
+
+  it("invoices.bezahlt matches only bezahlt", () => {
+    const fn = STATUS_PRESETS.invoices["bezahlt"];
+    expect(fn({ zahlungsstatus: "bezahlt" })).toBe(true);
+    expect(fn({ zahlungsstatus: "offen" })).toBe(false);
+  });
+
+  it("invoices.ueberfaellig: paid invoices never overdue", () => {
+    const fn = STATUS_PRESETS.invoices["ueberfaellig"];
+    expect(fn({ zahlungsstatus: "bezahlt", datum: "2020-01-01" })).toBe(false);
+  });
+
+  it("invoices.ueberfaellig: unpaid older than 30 days is overdue", () => {
+    const fn = STATUS_PRESETS.invoices["ueberfaellig"];
+    const old = new Date();
+    old.setDate(old.getDate() - 45);
+    expect(fn({ zahlungsstatus: "offen", datum: old.toISOString().split("T")[0] })).toBe(true);
+  });
+
+  it("invoices.ueberfaellig: unpaid within 30 days is not overdue", () => {
+    const fn = STATUS_PRESETS.invoices["ueberfaellig"];
+    const recent = new Date();
+    recent.setDate(recent.getDate() - 10);
+    expect(fn({ zahlungsstatus: "offen", datum: recent.toISOString().split("T")[0] })).toBe(false);
+  });
+
+  it("invoices.entwurf matches records without belegnr or status angelegt", () => {
+    const fn = STATUS_PRESETS.invoices["entwurf"];
+    expect(fn({ belegnr: "", status: "freigegeben" })).toBe(true);
+    expect(fn({ belegnr: null, status: "freigegeben" })).toBe(true);
+    expect(fn({ belegnr: "RE-001", status: "angelegt" })).toBe(true);
+    expect(fn({ belegnr: "RE-001", status: "freigegeben" })).toBe(false);
+  });
+
+  it("invoices.mahnkandidaten: paid never a candidate", () => {
+    const fn = STATUS_PRESETS.invoices["mahnkandidaten"];
+    expect(fn({ zahlungsstatus: "bezahlt", datum: "2020-01-01" })).toBe(false);
+  });
+
+  it("invoices.mahnkandidaten: gesperrt invoices excluded", () => {
+    const fn = STATUS_PRESETS.invoices["mahnkandidaten"];
+    const old = new Date();
+    old.setDate(old.getDate() - 30);
+    expect(fn({ zahlungsstatus: "offen", mahnwesen_gesperrt: "1", datum: old.toISOString().split("T")[0] })).toBe(false);
+  });
+
+  it("invoices.mahnkandidaten: unpaid, not locked, older than 14 days", () => {
+    const fn = STATUS_PRESETS.invoices["mahnkandidaten"];
+    const old = new Date();
+    old.setDate(old.getDate() - 20);
+    expect(fn({ zahlungsstatus: "offen", mahnwesen_gesperrt: "0", datum: old.toISOString().split("T")[0] })).toBe(true);
+  });
+
+  it("quotes.offen matches freigegeben and angelegt", () => {
+    const fn = STATUS_PRESETS.quotes["offen"];
+    expect(fn({ status: "freigegeben" })).toBe(true);
+    expect(fn({ status: "angelegt" })).toBe(true);
+    expect(fn({ status: "abgelehnt" })).toBe(false);
+  });
+
+  it("quotes.angenommen matches beauftragt", () => {
+    const fn = STATUS_PRESETS.quotes["angenommen"];
+    expect(fn({ status: "beauftragt" })).toBe(true);
+    expect(fn({ status: "freigegeben" })).toBe(false);
+  });
+
+  it("quotes.abgelehnt matches abgelehnt", () => {
+    const fn = STATUS_PRESETS.quotes["abgelehnt"];
+    expect(fn({ status: "abgelehnt" })).toBe(true);
+    expect(fn({ status: "angelegt" })).toBe(false);
+  });
+});
+
+describe("applyStatusPreset", () => {
+  const invoices = [
+    { id: 1, zahlungsstatus: "offen" },
+    { id: 2, zahlungsstatus: "bezahlt" },
+    { id: 3, zahlungsstatus: "offen" },
+  ];
+
+  it("filters by known preset", () => {
+    const result = applyStatusPreset(invoices, "invoices", "bezahlt");
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(2);
+  });
+
+  it("returns all records for unknown entity", () => {
+    const result = applyStatusPreset(invoices, "unknown_entity", "offen");
+    expect(result).toHaveLength(3);
+  });
+
+  it("returns all records for unknown preset", () => {
+    const result = applyStatusPreset(invoices, "invoices", "nonexistent");
+    expect(result).toHaveLength(3);
+  });
+
+  it("returns empty array when all filtered out", () => {
+    const allPaid = [{ id: 1, zahlungsstatus: "bezahlt" }, { id: 2, zahlungsstatus: "bezahlt" }];
+    const result = applyStatusPreset(allPaid, "invoices", "offen");
+    expect(result).toHaveLength(0);
+  });
+
+  it("works with orders entity", () => {
+    const orders = [
+      { id: 1, status: "freigegeben" },
+      { id: 2, status: "abgeschlossen" },
+      { id: 3, status: "angelegt" },
+    ];
+    const result = applyStatusPreset(orders, "orders", "offen");
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(1);
+  });
+
+  it("works with quotes entity", () => {
+    const quotes = [
+      { id: 1, status: "freigegeben" },
+      { id: 2, status: "beauftragt" },
+      { id: 3, status: "abgelehnt" },
+    ];
+    const result = applyStatusPreset(quotes, "quotes", "angenommen");
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(2);
+  });
+});

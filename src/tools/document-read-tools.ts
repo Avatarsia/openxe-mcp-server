@@ -2,7 +2,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList, FilteredListResult } from "../utils/field-filter.js";
-import { applyAggregate, AggregateOp, parseZeitraum } from "../utils/smart-filters.js";
+import { applyAggregate, AggregateOp, parseZeitraum, formatAsTable, formatAsCsv, formatAsIds } from "../utils/smart-filters.js";
 
 // --- Aggregate schema ---
 
@@ -43,6 +43,7 @@ const ListFilters = z.object({
     .optional()
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   aggregate: AggregateSchema,
+  format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
 });
 
 const GetByIdInput = z.object({
