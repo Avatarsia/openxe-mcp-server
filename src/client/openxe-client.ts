@@ -329,6 +329,22 @@ export class OpenXEClient {
     return url.toString();
   }
 
+  /**
+   * Execute a fetch call with the configured timeout applied via AbortController.
+   */
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
+    try {
+      return await this.fetchFn(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   private async authenticatedRequest(
     method: string,
     url: string,
@@ -351,7 +367,7 @@ export class OpenXEClient {
     if (this.auth.hasChallenge()) {
       headers.Authorization = this.auth.generateHeader(method, uri);
 
-      const response = await this.fetchFn(url, {
+      const response = await this.fetchWithTimeout(url, {
         method,
         headers,
         body: serialisedBody,
@@ -374,7 +390,7 @@ export class OpenXEClient {
 
     // No cached challenge or nonce expired — do initial 401 handshake
     if (!this.auth.hasChallenge()) {
-      const challengeResponse = await this.fetchFn(url, {
+      const challengeResponse = await this.fetchWithTimeout(url, {
         method,
         headers: { Accept: "application/json" },
       });
@@ -402,7 +418,7 @@ export class OpenXEClient {
     // Now send the authenticated request
     headers.Authorization = this.auth.generateHeader(method, uri);
 
-    const response = await this.fetchFn(url, {
+    const response = await this.fetchWithTimeout(url, {
       method,
       headers,
       body: serialisedBody,

@@ -313,13 +313,28 @@ async function main() {
     BATCH_PDF_TOOL_DEFINITION,
   ];
 
+  // Read-only mode: only read tools, document read tools, dashboard, and business queries
+  const READONLY_TOOLS = [
+    ...READ_TOOL_DEFINITIONS,
+    ...DOCUMENT_READ_TOOL_DEFINITIONS,
+    ...DASHBOARD_TOOL_DEFINITIONS,
+    BUSINESS_QUERY_TOOL_DEFINITION,
+  ];
+
   const ROUTER_TOOLS = [
     DISCOVER_TOOL_DEFINITION,
     ROUTER_TOOL_DEFINITION,
   ];
 
-  const ALL_TOOLS = config.mode === "router" ? ROUTER_TOOLS : FULL_TOOLS;
+  const ALL_TOOLS = config.mode === "router"
+    ? ROUTER_TOOLS
+    : config.mode === "readonly"
+      ? READONLY_TOOLS
+      : FULL_TOOLS;
 
+  if (config.mode === "readonly") {
+    console.error("[INFO] Running in read-only mode \u2014 write operations disabled");
+  }
   console.error(`OpenXE MCP Server mode: ${config.mode} (${ALL_TOOLS.length} tools registered)`);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -352,9 +367,20 @@ async function main() {
     PROCUREMENT_TOOL_DEFINITIONS.map((t: { name: string }) => t.name)
   );
 
+  // Build a set of tool names allowed in readonly mode for fast lookup
+  const readonlyToolNames = new Set(READONLY_TOOLS.map((t) => t.name));
+
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ServerResult> => {
     const { name, arguments: args } = request.params;
     const toolArgs = (args ?? {}) as Record<string, unknown>;
+
+    // In readonly mode, reject any tool not in the readonly set
+    if (config.mode === "readonly" && !readonlyToolNames.has(name)) {
+      return {
+        content: [{ type: "text" as const, text: `Blocked: "${name}" is a write operation and this server runs in read-only mode (OPENXE_MODE=readonly). Only read operations are available.` }],
+        isError: true,
+      } as ServerResult;
+    }
 
     // Router mode tools
     if (name === "openxe-discover") {
@@ -413,9 +439,25 @@ async function main() {
     const http = await import("node:http");
 
     const port = parseInt(process.env.PORT ?? "3100", 10);
+    const host = process.env.MCP_HTTP_HOST || "127.0.0.1";
+    const authToken = process.env.MCP_AUTH_TOKEN;
+
+    if (authToken) {
+      console.error("[INFO] HTTP auth enabled \u2014 Bearer token required for all requests");
+    }
 
     const httpServer = http.createServer(async (req, res) => {
       if (req.url === "/mcp" && req.method === "POST") {
+        // Check auth if token is configured
+        if (authToken) {
+          const provided = req.headers.authorization;
+          if (!provided || provided !== `Bearer ${authToken}`) {
+            res.writeHead(401, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Unauthorized \u2014 set Authorization: Bearer <MCP_AUTH_TOKEN>" }));
+            return;
+          }
+        }
+
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => crypto.randomUUID(),
         });
@@ -427,9 +469,9 @@ async function main() {
       }
     });
 
-    httpServer.listen(port, () => {
+    httpServer.listen(port, host, () => {
       console.error(
-        `OpenXE MCP Server listening on http://0.0.0.0:${port}/mcp`
+        `OpenXE MCP Server listening on http://${host}:${port}/mcp`
       );
     });
   } else {

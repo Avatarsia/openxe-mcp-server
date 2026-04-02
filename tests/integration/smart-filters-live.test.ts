@@ -5,7 +5,7 @@
  * client-side filter functions from src/utils/smart-filters.ts and verify
  * correctness of each operation.
  *
- * API: http://192.168.0.143/api/index.php  (digest auth user:user)
+ * Configure via env vars: OPENXE_URL, OPENXE_USERNAME, OPENXE_PASSWORD
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -29,10 +29,16 @@ import { filterDeleted } from "../../src/utils/field-filter.js";
 // Client setup
 // ---------------------------------------------------------------------------
 
+const baseUrl = process.env.OPENXE_URL
+  ? `${process.env.OPENXE_URL}/api/index.php`
+  : "http://192.168.0.143/api/index.php";
+const username = process.env.OPENXE_USERNAME || "user";
+const password = process.env.OPENXE_PASSWORD || "user";
+
 const client = new OpenXEClient({
-  baseUrl: "http://192.168.0.143/api/index.php",
-  username: "user",
-  password: "user",
+  baseUrl,
+  username,
+  password,
   timeout: 30000,
   mode: "router",
 });

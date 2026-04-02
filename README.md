@@ -149,6 +149,10 @@ Der Server liest seine Konfiguration aus Umgebungsvariablen:
 | `OPENXE_PASSWORD` | Ja | - | API-Passwort |
 | `OPENXE_API_PATH` | Nein | `/api/index.php` | API-Endpunkt-Pfad |
 | `OPENXE_TIMEOUT` | Nein | `30000` | Request-Timeout in ms |
+| `OPENXE_MODE` | Nein | `router` | `router`, `full` oder `readonly` |
+| `OPENXE_ALLOW_HTTP` | Nein | - | Auf `1` setzen um HTTP-Warnung zu unterdruecken |
+| `MCP_AUTH_TOKEN` | Nein | - | Bearer-Token fuer HTTP-Transport |
+| `MCP_HTTP_HOST` | Nein | `127.0.0.1` | Bind-Adresse fuer HTTP-Transport |
 
 ## Erste Schritte
 
@@ -213,6 +217,42 @@ Dein KI-Assistent waehlt automatisch die passenden Tools und Resources aus.
 
 - Erhoehe `OPENXE_TIMEOUT` (Default: 30000ms)
 - Verwende spezifischere Abfragen statt "zeig mir alles"
+
+## Sicherheit
+
+### Lokaler Betrieb (Standard)
+
+Im Standard-Modus (stdio) laeuft der MCP-Server als Subprocess deines KI-Assistenten. Keine Netzwerkports werden geoeffnet — die Kommunikation laeuft ueber stdin/stdout Pipes. Fuer lokalen Betrieb im LAN sind keine zusaetzlichen Sicherheitseinstellungen noetig.
+
+### Umgebungsvariablen
+
+| Variable | Default | Beschreibung |
+|---|---|---|
+| `OPENXE_MODE` | `router` | `router` (2 Tools), `full` (alle Tools einzeln), `readonly` (nur Lesen — keine Schreiboperationen) |
+| `OPENXE_TIMEOUT` | `30000` | Request-Timeout in ms — verhindert haengende Verbindungen |
+| `OPENXE_ALLOW_HTTP` | - | Auf `1` setzen um die HTTP-Warnung zu unterdruecken (z.B. im LAN) |
+| `MCP_AUTH_TOKEN` | - | Bearer-Token fuer den HTTP-Transport (nur mit `--http` relevant) |
+| `MCP_HTTP_HOST` | `127.0.0.1` | Bind-Adresse fuer HTTP-Transport (Standard: nur lokal) |
+
+### Read-Only Modus
+
+```bash
+OPENXE_MODE=readonly npx -y github:Avatarsia/openxe-mcp-server
+```
+
+Deaktiviert alle Schreiboperationen (Erstellen, Bearbeiten, Loeschen, Freigeben). Nur Lesen, Dashboard-KPIs und Business Queries sind verfuegbar.
+
+### HTTP-Transport absichern
+
+Wenn du den MCP-Server ueber `--http` als Netzwerkdienst betreibst:
+
+```bash
+MCP_AUTH_TOKEN=mein-geheimer-token npx -y github:Avatarsia/openxe-mcp-server -- --http
+```
+
+- Bindet standardmaessig auf `127.0.0.1` (nur lokal erreichbar)
+- `MCP_HTTP_HOST=0.0.0.0` fuer Netzwerkzugriff (nur hinter Reverse-Proxy mit TLS!)
+- `MCP_AUTH_TOKEN` erzwingt Bearer-Token-Authentifizierung auf dem HTTP-Endpoint
 
 ## Wichtige Hinweise
 

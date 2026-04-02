@@ -69,11 +69,11 @@ const ResubmissionCreateInput = z.object({
 });
 
 const FileUploadInput = z.object({
-  dateiname: z.string().describe("Dateiname mit Endung (z.B. 'rechnung.pdf')"),
+  dateiname: z.string().regex(/^[^\\\/\0]+$/, "Filename must not contain path separators").describe("Dateiname mit Endung (z.B. 'rechnung.pdf')"),
   titel: z.string().describe("Titel/Beschreibung der Datei"),
-  file_content: z.string().describe("Dateiinhalt als Base64-String"),
+  file_content: z.string().max(10_000_000, "File content too large (max ~7.5MB)").describe("Dateiinhalt als Base64-String"),
   beschreibung: z.string().optional().describe("Optionale Beschreibung"),
-  objekt_typ: z.string().describe("Objekttyp dem die Datei zugeordnet wird: auftrag, rechnung, lieferschein, angebot, gutschrift, artikel, adresse, bestellung, projekt"),
+  objekt_typ: z.enum(["auftrag", "rechnung", "lieferschein", "angebot", "gutschrift", "artikel", "adresse", "bestellung", "projekt"]).describe("Objekttyp dem die Datei zugeordnet wird"),
   objekt_id: z.string().describe("ID des Objekts (z.B. '1' fuer Auftrag mit ID 1)"),
   stichwort: z.string().optional().default("Anlage").describe("Stichwort/Kategorie (Standard: 'Anlage')"),
 });

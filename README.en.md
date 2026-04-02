@@ -44,6 +44,10 @@ The server reads its config from environment variables:
 | `OPENXE_PASSWORD` | Yes | - | API password |
 | `OPENXE_API_PATH` | No | `/api/index.php` | API endpoint path |
 | `OPENXE_TIMEOUT` | No | `30000` | Request timeout in ms |
+| `OPENXE_MODE` | No | `router` | `router`, `full`, or `readonly` |
+| `OPENXE_ALLOW_HTTP` | No | - | Set to `1` to suppress HTTP warning |
+| `MCP_AUTH_TOKEN` | No | - | Bearer token for HTTP transport |
+| `MCP_HTTP_HOST` | No | `127.0.0.1` | Bind address for HTTP transport |
 
 ## Usage with Claude Desktop
 
@@ -74,6 +78,42 @@ claude mcp add openxe -- npx tsx /path/to/openxe-mcp-server/src/index.ts
 ```
 
 Set the required environment variables in your shell before launching Claude Code.
+
+## Security
+
+### Local Operation (Default)
+
+In the default mode (stdio), the MCP server runs as a subprocess of your AI assistant. No network ports are opened -- communication happens via stdin/stdout pipes. No additional security settings are needed for local LAN usage.
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `OPENXE_MODE` | `router` | `router` (2 tools), `full` (all tools individually), `readonly` (read-only -- no write operations) |
+| `OPENXE_TIMEOUT` | `30000` | Request timeout in ms -- prevents hanging connections |
+| `OPENXE_ALLOW_HTTP` | - | Set to `1` to suppress the HTTP warning (e.g. in LAN) |
+| `MCP_AUTH_TOKEN` | - | Bearer token for HTTP transport (only relevant with `--http`) |
+| `MCP_HTTP_HOST` | `127.0.0.1` | Bind address for HTTP transport (default: localhost only) |
+
+### Read-Only Mode
+
+```bash
+OPENXE_MODE=readonly npx -y github:Avatarsia/openxe-mcp-server
+```
+
+Disables all write operations (create, edit, delete, release). Only reading, dashboard KPIs, and business queries are available.
+
+### Securing HTTP Transport
+
+When running the MCP server as a network service via `--http`:
+
+```bash
+MCP_AUTH_TOKEN=my-secret-token npx -y github:Avatarsia/openxe-mcp-server -- --http
+```
+
+- Binds to `127.0.0.1` by default (localhost only)
+- `MCP_HTTP_HOST=0.0.0.0` for network access (only behind a reverse proxy with TLS!)
+- `MCP_AUTH_TOKEN` enforces bearer token authentication on the HTTP endpoint
 
 ## Project Structure
 
