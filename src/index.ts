@@ -246,7 +246,7 @@ async function main() {
     TIME_TOOL_DEFINITIONS.map((t) => t.name)
   );
   const dashboardToolNames = new Set(
-    DASHBOARD_TOOL_DEFINITIONS.map((t) => t.name)
+    DASHBOARD_TOOL_DEFINITIONS.map((t: { name: string }) => t.name)
   );
   const readToolNames = new Set(
     READ_TOOL_DEFINITIONS.map((t) => t.name)

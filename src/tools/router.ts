@@ -9,6 +9,7 @@ import { handleSubscriptionTool } from "./subscription-tools.js";
 import { handleTimeTool } from "./time-tools.js";
 import { handleBusinessQueryTool } from "./business-query-tools.js";
 import { handleBatchPDFTool } from "./batch-pdf-tools.js";
+import { handleDashboardTool } from "./dashboard-tools.js";
 import { BUSINESS_PRESETS } from "../utils/smart-filters.js";
 
 // --- Types ---
@@ -26,13 +27,13 @@ interface ToolResult {
 
 // --- Action Registry ---
 
-type Category = "stammdaten" | "belege" | "business" | "shop" | "zeiterfassung" | "system";
+type Category = "stammdaten" | "belege" | "business" | "shop" | "zeiterfassung" | "system" | "dashboard";
 
 interface ActionEntry {
   action: string;
   label: string;
   category: Category;
-  handler: "read" | "document-read" | "document" | "address" | "subscription" | "time" | "business-query" | "batch-pdf";
+  handler: "read" | "document-read" | "document" | "address" | "subscription" | "time" | "business-query" | "batch-pdf" | "dashboard";
   toolName: string; // original openxe-* tool name
 }
 
@@ -104,6 +105,9 @@ const ACTION_REGISTRY: ActionEntry[] = [
 
   // === System ===
   { action: "server-time", label: "Serverzeit abrufen", category: "system", handler: "subscription", toolName: "openxe-server-time" },
+
+  // === Dashboard ===
+  { action: "dashboard", label: "KPI abrufen (umsatz-monat, umsatz-jahr, offene-auftraege, offene-rechnungen, ueberfaellige-rechnungen, top-kunde, auftragseingang-woche, artikel-anzahl, kunden-anzahl)", category: "dashboard", handler: "dashboard", toolName: "openxe-dashboard" },
 ];
 
 // Build lookup map
@@ -116,7 +120,7 @@ for (const entry of ACTION_REGISTRY) {
 
 const DiscoverInput = z.object({
   category: z
-    .enum(["stammdaten", "belege", "business", "shop", "zeiterfassung", "system", "alle"])
+    .enum(["stammdaten", "belege", "business", "shop", "zeiterfassung", "system", "dashboard", "alle"])
     .optional()
     .default("alle")
     .describe("Kategorie-Filter (default: alle)"),
@@ -136,9 +140,10 @@ const CATEGORY_LABELS: Record<Category, string> = {
   shop: "Shop / CRM / Sonstiges",
   zeiterfassung: "Zeiterfassung",
   system: "System",
+  dashboard: "Dashboard",
 };
 
-const CATEGORY_ORDER: Category[] = ["stammdaten", "belege", "business", "shop", "zeiterfassung", "system"];
+const CATEGORY_ORDER: Category[] = ["stammdaten", "belege", "business", "shop", "zeiterfassung", "system", "dashboard"];
 
 export function handleDiscover(args: Record<string, unknown>): ToolResult {
   const { category } = DiscoverInput.parse(args);
@@ -239,6 +244,8 @@ export async function handleRouter(
       return handleBusinessQueryTool({ preset: action.replace(/^bq-/, ""), ...params }, client);
     case "batch-pdf":
       return handleBatchPDFTool(entry.toolName, params, client);
+    case "dashboard":
+      return handleDashboardTool(entry.toolName, params, client);
     default:
       return {
         content: [{ type: "text", text: `Internal error: unknown handler "${entry.handler}"` }],
