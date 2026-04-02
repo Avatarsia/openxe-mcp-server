@@ -2,7 +2,7 @@
 
 Verbinde dein [OpenXE ERP](https://openxe.de/) mit deinem KI-Assistenten -- per [MCP (Model Context Protocol)](https://modelcontextprotocol.io/).
 
-> **30+ Tools** zum Erstellen und Bearbeiten von ERP-Daten | **19 Resources** zum Lesen von Artikeln, Auftraegen, Rechnungen, Lagerbestaenden u.v.m. | **Verifiziert** gegen eine live OpenXE v1.12 Instanz
+> **37+ Tools** zum Erstellen und Bearbeiten von ERP-Daten | **19 Resources** zum Lesen von Artikeln, Auftraegen, Rechnungen, Lagerbestaenden u.v.m. | **Verifiziert** gegen eine live OpenXE v1.12 Instanz
 
 ## Was ist das?
 
@@ -188,6 +188,7 @@ Dein KI-Assistent waehlt automatisch die passenden Tools und Resources aus.
 | Adressen | Kunden/Lieferanten anlegen und bearbeiten |
 | Artikel | Artikelstammdaten bearbeiten |
 | Abos | Wiederkehrende Auftraege verwalten |
+| Zeiterfassung | Stechuhr (kommen/gehen/Pause), Zeiteintraege CRUD, Wochen-Uebersicht |
 
 ## Haeufige Probleme
 
