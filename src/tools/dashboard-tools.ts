@@ -264,17 +264,16 @@ async function kpiKundenAnzahl(client: OpenXEClient): Promise<Record<string, unk
     client,
     "/v1/adressen",
     {},
-    { maxResults: 5000 }
+    { includeDeleted: false }
   );
-  const aktiv = result.data.filter((r: any) => {
-    const typ = String(r.typ || "").toLowerCase();
-    return typ.includes("kunde") || typ.includes("customer");
+  const kunden = result.data.filter((a: any) => {
+    const knr = String(a.kundennummer || "").trim();
+    return knr !== "" && !knr.startsWith("DEL");
   });
   return {
     kpi: "kunden-anzahl",
-    wert: aktiv.length,
-    gesamt: result.data.length,
-    info: "Nur Typ kunde",
+    wert: kunden.length,
+    label: "aktive Kunden mit Kundennummer",
   };
 }
 

@@ -402,13 +402,13 @@ describe("Dashboard Tools", () => {
   // --- KPI: kunden-anzahl ---
 
   describe("kunden-anzahl", () => {
-    it("counts addresses with typ containing kunde", async () => {
+    it("counts addresses with non-empty kundennummer", async () => {
       mockClient.get.mockResolvedValue({
         data: [
-          { id: 1, typ: "kunde", name: "A" },
-          { id: 2, typ: "lieferant", name: "B" },
-          { id: 3, typ: "kunde", name: "C" },
-          { id: 4, typ: "mitarbeiter", name: "D" },
+          { id: 1, typ: "firma", name: "A", kundennummer: "KD10001" },
+          { id: 2, typ: "firma", name: "B", kundennummer: "" },
+          { id: 3, typ: "herr", name: "C", kundennummer: "KD10002" },
+          { id: 4, typ: "frau", name: "D" },
         ],
       });
 
@@ -422,7 +422,27 @@ describe("Dashboard Tools", () => {
       const data = JSON.parse(result.content[0].text);
       expect(data.kpi).toBe("kunden-anzahl");
       expect(data.wert).toBe(2);
-      expect(data.gesamt).toBe(4);
+      expect(data.label).toBe("aktive Kunden mit Kundennummer");
+    });
+
+    it("excludes DEL-prefixed kundennummern", async () => {
+      mockClient.get.mockResolvedValue({
+        data: [
+          { id: 1, kundennummer: "KD10001", name: "Active" },
+          { id: 2, kundennummer: "DEL-KD10002", name: "Deleted" },
+          { id: 3, kundennummer: "KD10003", name: "Active2" },
+        ],
+      });
+
+      const result = await handleDashboardTool(
+        "openxe-dashboard",
+        { kpi: "kunden-anzahl" },
+        mockClient as unknown as OpenXEClient,
+        NOW
+      );
+
+      const data = JSON.parse(result.content[0].text);
+      expect(data.wert).toBe(2);
     });
   });
 
