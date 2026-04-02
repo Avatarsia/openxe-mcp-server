@@ -2,7 +2,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList, FilteredListResult } from "../utils/field-filter.js";
-import { applyAggregate, AggregateOp, formatAsTable, formatAsCsv, formatAsIds, applyWhere } from "../utils/smart-filters.js";
+import { applyAggregate, AggregateOp, applySort, applyLimit, applyFields, formatAsTable, formatAsCsv, formatAsIds, applyWhere } from "../utils/smart-filters.js";
 
 // --- Aggregate schema (shared by all list tools) ---
 
@@ -49,6 +49,10 @@ const ListAddressesInput = z.object({
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  sort_field: z.string().optional().describe("Sortierfeld (z.B. 'name', 'datum', 'gesamtsumme')"),
+  sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sortierreihenfolge"),
+  limit: z.number().int().positive().max(200).optional().describe("Maximale Anzahl Ergebnisse"),
+  fields: z.array(z.string()).optional().describe("Nur diese Felder zurueckgeben (z.B. ['name','plz','kundennummer'])"),
   aggregate: AggregateSchema,
   format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
   where: whereSchema,
@@ -75,6 +79,10 @@ const ListArticlesInput = z.object({
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  sort_field: z.string().optional().describe("Sortierfeld (z.B. 'name', 'datum', 'gesamtsumme')"),
+  sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sortierreihenfolge"),
+  limit: z.number().int().positive().max(200).optional().describe("Maximale Anzahl Ergebnisse"),
+  fields: z.array(z.string()).optional().describe("Nur diese Felder zurueckgeben (z.B. ['name','plz','kundennummer'])"),
   aggregate: AggregateSchema,
   format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
   where: whereSchema,
@@ -100,6 +108,10 @@ const ListCategoriesInput = z.object({
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  sort_field: z.string().optional().describe("Sortierfeld (z.B. 'name', 'datum', 'gesamtsumme')"),
+  sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sortierreihenfolge"),
+  limit: z.number().int().positive().max(200).optional().describe("Maximale Anzahl Ergebnisse"),
+  fields: z.array(z.string()).optional().describe("Nur diese Felder zurueckgeben (z.B. ['name','plz','kundennummer'])"),
   aggregate: AggregateSchema,
   format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
   where: whereSchema,
@@ -112,6 +124,10 @@ const ListShippingMethodsInput = z.object({
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  sort_field: z.string().optional().describe("Sortierfeld (z.B. 'name', 'datum', 'gesamtsumme')"),
+  sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sortierreihenfolge"),
+  limit: z.number().int().positive().max(200).optional().describe("Maximale Anzahl Ergebnisse"),
+  fields: z.array(z.string()).optional().describe("Nur diese Felder zurueckgeben (z.B. ['name','plz','kundennummer'])"),
   aggregate: AggregateSchema,
   format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
   where: whereSchema,
@@ -127,6 +143,10 @@ const ListFilesInput = z.object({
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  sort_field: z.string().optional().describe("Sortierfeld (z.B. 'name', 'datum', 'gesamtsumme')"),
+  sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sortierreihenfolge"),
+  limit: z.number().int().positive().max(200).optional().describe("Maximale Anzahl Ergebnisse"),
+  fields: z.array(z.string()).optional().describe("Nur diese Felder zurueckgeben (z.B. ['name','plz','kundennummer'])"),
   aggregate: AggregateSchema,
   format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
   where: whereSchema,
@@ -231,7 +251,7 @@ export async function handleReadTool(
   switch (name) {
     case "openxe-list-addresses": {
       const args = ListAddressesInput.parse(input);
-      const { name: nameFilter, email, land, include_deleted, aggregate, format, where, ...serverParams } = args;
+      const { name: nameFilter, email, land, include_deleted, sort_field, sort_order, limit, fields, aggregate, format, where, ...serverParams } = args;
 
       // Only kundennummer goes to the server
       const apiParams: Record<string, string | number | undefined> = {};
@@ -242,10 +262,10 @@ export async function handleReadTool(
       });
 
       // Client-side filters (name, email, land)
-      let filtered = result.data;
+      let data: any[] = result.data;
       if (nameFilter) {
         const lowerFilter = nameFilter.toLowerCase();
-        filtered = filtered.filter((a: any) => {
+        data = data.filter((a: any) => {
           const n = String(a.name ?? "").toLowerCase();
           const fn = String(a.firma ?? "").toLowerCase();
           return n.includes(lowerFilter) || fn.includes(lowerFilter);
@@ -253,33 +273,50 @@ export async function handleReadTool(
       }
       if (email) {
         const lowerEmail = email.toLowerCase();
-        filtered = filtered.filter((a: any) =>
+        data = data.filter((a: any) =>
           String(a.email ?? "").toLowerCase().includes(lowerEmail)
         );
       }
       if (land) {
         const upperLand = land.toUpperCase();
-        filtered = filtered.filter((a: any) => String(a.land ?? "").toUpperCase() === upperLand);
+        data = data.filter((a: any) => String(a.land ?? "").toUpperCase() === upperLand);
       }
 
       // applyWhere -- on full data (before slim)
       if (where) {
-        filtered = applyWhere(filtered, where);
+        data = applyWhere(data, where);
       }
 
       // Aggregate: return aggregation result instead of data list
       if (aggregate) {
-        const aggResult = applyAggregate(filtered, aggregate as AggregateOp);
+        const aggResult = applyAggregate(data, aggregate as AggregateOp);
         return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
       }
 
-      const slimmed = applySlimMode(filtered, [...SLIM_FIELDS.address]) as Record<string, unknown>[];
-      const { data: truncated, truncated: wasTruncated } = truncateWithWarning(slimmed, MAX_LIST_RESULTS);
-
-      // Update meta to reflect client-side filtering and truncation
-      result.data = truncated;
-      result.meta.returned = truncated.length;
-      result.meta.truncated = wasTruncated || result.meta.truncated;
+      // 4. applySort
+      if (sort_field) {
+        data = applySort(data, { field: sort_field, order: sort_order || "asc" });
+      }
+      // 5. applyLimit
+      if (limit) {
+        data = applyLimit(data, limit);
+      }
+      // 6. applyFields OR applySlimMode (fields overrides slim)
+      if (fields && fields.length > 0) {
+        data = applyFields(data, fields);
+      } else {
+        data = applySlimMode(data, [...SLIM_FIELDS.address]) as any[];
+      }
+      // 7. truncateWithWarning (only if no explicit limit was set)
+      if (!limit) {
+        const { data: truncated, truncated: wasTruncated } = truncateWithWarning(data, MAX_LIST_RESULTS);
+        result.data = truncated;
+        result.meta.returned = truncated.length;
+        result.meta.truncated = wasTruncated || result.meta.truncated;
+      } else {
+        result.data = data;
+        result.meta.returned = data.length;
+      }
 
       return buildListResponse(result, "Fuer alle Details eines Eintrags nutze openxe-get-address mit der ID.", format);
     }
@@ -296,7 +333,7 @@ export async function handleReadTool(
 
     case "openxe-list-articles": {
       const args = ListArticlesInput.parse(input);
-      const { include_deleted: includeDeletedArt, page: _p, items: _i, aggregate: aggArt, format: fmtArt, where: whereArt, ...filterArgs } = args;
+      const { include_deleted: includeDeletedArt, page: _p, items: _i, sort_field: sfArt, sort_order: soArt, limit: limArt, fields: fldsArt, aggregate: aggArt, format: fmtArt, where: whereArt, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.name_de) apiParams.name_de = filterArgs.name_de;
       if (filterArgs.nummer) apiParams.nummer = filterArgs.nummer;
@@ -307,7 +344,7 @@ export async function handleReadTool(
       const result = await fetchFilteredList(client, "/v1/artikel", apiParams, {
         slimFields: SLIM_FIELDS.article,
         includeDeleted: includeDeletedArt,
-        skipSlim: !!whereArt,
+        skipSlim: !!(whereArt || fldsArt),
       });
 
       // applyWhere -- on full data (before slim)
@@ -321,13 +358,25 @@ export async function handleReadTool(
         return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
       }
 
-      // Slim if where was used
-      if (whereArt) {
+      if (sfArt) {
+        dataArt = applySort(dataArt, { field: sfArt, order: soArt || "asc" });
+      }
+      if (limArt) {
+        dataArt = applyLimit(dataArt, limArt);
+      }
+      if (fldsArt && fldsArt.length > 0) {
+        dataArt = applyFields(dataArt, fldsArt);
+      } else if (whereArt || fldsArt) {
         dataArt = applySlimMode(dataArt, [...SLIM_FIELDS.article]) as any[];
-        const { data: truncArt, truncated: truncArtFlag } = truncateWithWarning(dataArt, MAX_LIST_RESULTS);
-        result.data = truncArt;
-        result.meta.returned = truncArt.length;
-        result.meta.truncated = truncArtFlag || result.meta.truncated;
+      }
+      if (!limArt) {
+        const { data: trunc, truncated: truncFlag } = truncateWithWarning(dataArt, MAX_LIST_RESULTS);
+        result.data = trunc;
+        result.meta.returned = trunc.length;
+        result.meta.truncated = truncFlag || result.meta.truncated;
+      } else {
+        result.data = dataArt;
+        result.meta.returned = dataArt.length;
       }
 
       return buildListResponse(result, "Fuer alle Details eines Artikels nutze openxe-get-article mit der ID.", fmtArt);
@@ -348,7 +397,7 @@ export async function handleReadTool(
 
     case "openxe-list-categories": {
       const args = ListCategoriesInput.parse(input);
-      const { include_deleted: includeDeletedCat, page: _p, items: _i, aggregate: aggCat, format: fmtCat, where: whereCat, ...filterArgs } = args;
+      const { include_deleted: includeDeletedCat, page: _p2, items: _i2, sort_field: sfCat, sort_order: soCat, limit: limCat, fields: fldsCat, aggregate: aggCat, format: fmtCat, where: whereCat, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.bezeichnung) apiParams.bezeichnung = filterArgs.bezeichnung;
       if (filterArgs.parent !== undefined) apiParams.parent = filterArgs.parent;
@@ -357,7 +406,7 @@ export async function handleReadTool(
       const result = await fetchFilteredList(client, "/v1/artikelkategorien", apiParams, {
         slimFields: SLIM_FIELDS.category,
         includeDeleted: includeDeletedCat,
-        skipSlim: !!whereCat,
+        skipSlim: !!(whereCat || fldsCat),
       });
 
       let dataCat: any[] = result.data;
@@ -370,12 +419,25 @@ export async function handleReadTool(
         return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
       }
 
-      if (whereCat) {
+      if (sfCat) {
+        dataCat = applySort(dataCat, { field: sfCat, order: soCat || "asc" });
+      }
+      if (limCat) {
+        dataCat = applyLimit(dataCat, limCat);
+      }
+      if (fldsCat && fldsCat.length > 0) {
+        dataCat = applyFields(dataCat, fldsCat);
+      } else if (whereCat || fldsCat) {
         dataCat = applySlimMode(dataCat, [...SLIM_FIELDS.category]) as any[];
-        const { data: truncCat, truncated: truncCatFlag } = truncateWithWarning(dataCat, MAX_LIST_RESULTS);
-        result.data = truncCat;
-        result.meta.returned = truncCat.length;
-        result.meta.truncated = truncCatFlag || result.meta.truncated;
+      }
+      if (!limCat) {
+        const { data: trunc, truncated: truncFlag } = truncateWithWarning(dataCat, MAX_LIST_RESULTS);
+        result.data = trunc;
+        result.meta.returned = trunc.length;
+        result.meta.truncated = truncFlag || result.meta.truncated;
+      } else {
+        result.data = dataCat;
+        result.meta.returned = dataCat.length;
       }
 
       return buildListResponse(result, "Fuer Details einer Kategorie nutze die jeweilige Kategorie-ID.", fmtCat);
@@ -383,12 +445,12 @@ export async function handleReadTool(
 
     case "openxe-list-shipping-methods": {
       const args = ListShippingMethodsInput.parse(input);
-      const { include_deleted: includeDeletedShip, page: _p, items: _i, aggregate: aggShip, format: fmtShip, where: whereShip } = args;
+      const { include_deleted: includeDeletedShip, page: _p3, items: _i3, sort_field: sfShip, sort_order: soShip, limit: limShip, fields: fldsShip, aggregate: aggShip, format: fmtShip, where: whereShip } = args;
 
       const result = await fetchFilteredList(client, "/v1/versandarten", {}, {
         slimFields: SLIM_FIELDS.shippingMethod,
         includeDeleted: includeDeletedShip,
-        skipSlim: !!whereShip,
+        skipSlim: !!(whereShip || fldsShip),
       });
 
       let dataShip: any[] = result.data;
@@ -401,12 +463,25 @@ export async function handleReadTool(
         return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
       }
 
-      if (whereShip) {
+      if (sfShip) {
+        dataShip = applySort(dataShip, { field: sfShip, order: soShip || "asc" });
+      }
+      if (limShip) {
+        dataShip = applyLimit(dataShip, limShip);
+      }
+      if (fldsShip && fldsShip.length > 0) {
+        dataShip = applyFields(dataShip, fldsShip);
+      } else if (whereShip || fldsShip) {
         dataShip = applySlimMode(dataShip, [...SLIM_FIELDS.shippingMethod]) as any[];
-        const { data: truncShip, truncated: truncShipFlag } = truncateWithWarning(dataShip, MAX_LIST_RESULTS);
-        result.data = truncShip;
-        result.meta.returned = truncShip.length;
-        result.meta.truncated = truncShipFlag || result.meta.truncated;
+      }
+      if (!limShip) {
+        const { data: trunc, truncated: truncFlag } = truncateWithWarning(dataShip, MAX_LIST_RESULTS);
+        result.data = trunc;
+        result.meta.returned = trunc.length;
+        result.meta.truncated = truncFlag || result.meta.truncated;
+      } else {
+        result.data = dataShip;
+        result.meta.returned = dataShip.length;
       }
 
       return buildListResponse(result, "Versandarten-Liste. Nutze die ID fuer Zuordnungen.", fmtShip);
@@ -414,7 +489,7 @@ export async function handleReadTool(
 
     case "openxe-list-files": {
       const args = ListFilesInput.parse(input);
-      const { include_deleted: includeDeletedFile, page: _p, items: _i, aggregate: aggFile, format: fmtFile, where: whereFile, ...filterArgs } = args;
+      const { include_deleted: includeDeletedFile, page: _p4, items: _i4, sort_field: sfFile, sort_order: soFile, limit: limFile, fields: fldsFile, aggregate: aggFile, format: fmtFile, where: whereFile, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.objekt) apiParams.objekt = filterArgs.objekt;
       if (filterArgs.parameter) apiParams.parameter = filterArgs.parameter;
@@ -423,7 +498,7 @@ export async function handleReadTool(
       const result = await fetchFilteredList(client, "/v1/dateien", apiParams, {
         slimFields: SLIM_FIELDS.file,
         includeDeleted: includeDeletedFile,
-        skipSlim: !!whereFile,
+        skipSlim: !!(whereFile || fldsFile),
       });
 
       let dataFile: any[] = result.data;
@@ -436,12 +511,25 @@ export async function handleReadTool(
         return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
       }
 
-      if (whereFile) {
+      if (sfFile) {
+        dataFile = applySort(dataFile, { field: sfFile, order: soFile || "asc" });
+      }
+      if (limFile) {
+        dataFile = applyLimit(dataFile, limFile);
+      }
+      if (fldsFile && fldsFile.length > 0) {
+        dataFile = applyFields(dataFile, fldsFile);
+      } else if (whereFile || fldsFile) {
         dataFile = applySlimMode(dataFile, [...SLIM_FIELDS.file]) as any[];
-        const { data: truncFile, truncated: truncFileFlag } = truncateWithWarning(dataFile, MAX_LIST_RESULTS);
-        result.data = truncFile;
-        result.meta.returned = truncFile.length;
-        result.meta.truncated = truncFileFlag || result.meta.truncated;
+      }
+      if (!limFile) {
+        const { data: trunc, truncated: truncFlag } = truncateWithWarning(dataFile, MAX_LIST_RESULTS);
+        result.data = trunc;
+        result.meta.returned = trunc.length;
+        result.meta.truncated = truncFlag || result.meta.truncated;
+      } else {
+        result.data = dataFile;
+        result.meta.returned = dataFile.length;
       }
 
       return buildListResponse(result, "Datei-Liste. Nutze die ID fuer weitere Operationen.", fmtFile);
