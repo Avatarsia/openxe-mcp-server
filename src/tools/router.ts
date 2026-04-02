@@ -177,8 +177,7 @@ export function handleDiscover(args: Record<string, unknown>): ToolResult {
   lines.push("Nutze openxe mit action=<name> und params={...} um eine Aktion auszufuehren.");
 
   return {
-    content: [{ type: "text", text: lines.join("
-") }],
+    content: [{ type: "text", text: lines.join("\n") }],
   };
 }
 
