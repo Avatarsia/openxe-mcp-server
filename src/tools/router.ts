@@ -19,6 +19,13 @@ interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 }
 
 interface ToolResult {
@@ -146,6 +153,7 @@ export const DISCOVER_TOOL_DEFINITION: ToolDefinition = {
   description:
     "Zeigt alle verfuegbaren OpenXE-Aktionen. IMMER ZUERST AUFRUFEN wenn du nicht weisst welche Aktionen es gibt. Optional: category='stammdaten'/'belege'/'beschaffung'/'zeiterfassung'/'dashboard'/'alle'",
   inputSchema: zodToJsonSchema(DiscoverInput) as Record<string, unknown>,
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 };
 
 const CATEGORY_LABELS: Record<Category, string> = {
@@ -229,6 +237,7 @@ export const ROUTER_TOOL_DEFINITION: ToolDefinition = {
   description:
     "Fuehrt eine OpenXE-Aktion aus. Nutze zuerst openxe-discover um verfuegbare Aktionen zu sehen. Beispiele: {action:'list-orders', params:{status_preset:'offen'}} oder {action:'dashboard', params:{kpi:'umsatz-monat'}}",
   inputSchema: zodToJsonSchema(RouterInput) as Record<string, unknown>,
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
 };
 
 export async function handleRouter(

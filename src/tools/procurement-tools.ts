@@ -35,6 +35,13 @@ interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 }
 
 interface ToolResult {
@@ -55,6 +62,7 @@ export const PROCUREMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       "Smart Filter: where, sort, limit, fields, format (json/table/csv/ids), aggregate. " +
       "Fuer Details nutze openxe-get-purchase-order mit der ID.",
     inputSchema: zodToJsonSchema(ListPurchaseOrdersInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "openxe-get-purchase-order",
@@ -62,6 +70,7 @@ export const PROCUREMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       "Einzelne Bestellung (Purchase Order) abrufen via Legacy API (BestellungGet). " +
       "Gibt ALLE Felder zurueck inkl. verschachtelter artikelliste.position[] mit Positionsdetails.",
     inputSchema: zodToJsonSchema(GetPurchaseOrderInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
 
   // === Write ===
@@ -73,6 +82,7 @@ export const PROCUREMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       "Optional: projekt, lieferdatum, einkaeufer, zahlungsweise, versandart, freitext, internebezeichnung. " +
       "Preis pro Position: wenn nicht angegeben wird der Einkaufspreis aus dem Artikelstamm verwendet.",
     inputSchema: zodToJsonSchema(CreatePurchaseOrderInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-edit-purchase-order",
@@ -80,6 +90,7 @@ export const PROCUREMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       "Bestellung (Purchase Order) bearbeiten via Legacy API (BestellungEdit). " +
       "Required: id. Optional: lieferdatum, einkaeufer, zahlungsweise, versandart, freitext, internebezeichnung.",
     inputSchema: zodToJsonSchema(EditPurchaseOrderInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "openxe-release-purchase-order",
@@ -87,6 +98,7 @@ export const PROCUREMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       "Bestellung (Purchase Order) freigeben via Legacy API (BestellungFreigabe). " +
       "Aendert Status von 'offen' auf 'freigegeben'. Required: id.",
     inputSchema: zodToJsonSchema(ReleasePurchaseOrderInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   },
 ];
 

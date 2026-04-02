@@ -130,6 +130,13 @@ interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 }
 
 interface ToolResult {
@@ -146,6 +153,7 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
       string,
       unknown
     >,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "openxe-get-subscription",
@@ -155,6 +163,7 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
       string,
       unknown
     >,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "openxe-create-subscription",
@@ -164,6 +173,7 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
       string,
       unknown
     >,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-edit-subscription",
@@ -172,6 +182,7 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
       string,
       unknown
     >,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "openxe-delete-subscription",
@@ -180,6 +191,7 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
     inputSchema: zodToJsonSchema(
       z.object({ id: z.number().int().positive() })
     ) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-create-crm-document",
@@ -189,6 +201,7 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
       string,
       unknown
     >,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-create-tracking",
@@ -198,6 +211,7 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
       string,
       unknown
     >,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-create-resubmission",
@@ -207,17 +221,20 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
       string,
       unknown
     >,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-upload-file",
     description:
       "Datei hochladen und einem Objekt zuordnen (Auftrag, Rechnung, Kunde, Artikel, etc.). Die Datei erscheint im OpenXE UI unter dem zugeordneten Objekt im Tab 'Dateien'. Pflichtfelder: dateiname, titel, file_content (Base64), objekt_typ, objekt_id.",
     inputSchema: zodToJsonSchema(FileUploadInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-server-time",
     description: "Get current server time from OpenXE.",
     inputSchema: zodToJsonSchema(ServerTimeInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
 ];
 

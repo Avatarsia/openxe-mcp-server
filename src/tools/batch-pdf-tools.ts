@@ -8,6 +8,13 @@ interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 }
 
 interface ToolResult {
@@ -37,6 +44,7 @@ export const BATCH_PDF_TOOL_DEFINITION: ToolDefinition = {
     "Entweder ids[] direkt angeben ODER mit status_preset / zeitraum / where filtern. " +
     "Gibt Array mit {id, belegnr, filename, size_bytes, base64} zurueck.",
   inputSchema: zodToJsonSchema(BatchPDFInput) as Record<string, unknown>,
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 };
 
 // --- Helper: resolve IDs from filters ---

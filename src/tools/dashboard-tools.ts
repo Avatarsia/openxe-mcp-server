@@ -10,6 +10,13 @@ interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 }
 
 interface ToolResult {
@@ -57,6 +64,7 @@ export const DASHBOARD_TOOL_DEFINITIONS: ToolDefinition[] = [
       "ueberfaellige-rechnungen, top-kunde, auftragseingang-woche, artikel-anzahl, kunden-anzahl, " +
       "offene-bestellungen, bestellvolumen-monat.",
     inputSchema: zodToJsonSchema(DashboardInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
 ];
 

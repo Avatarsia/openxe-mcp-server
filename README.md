@@ -153,6 +153,8 @@ Der Server liest seine Konfiguration aus Umgebungsvariablen:
 | `OPENXE_ALLOW_HTTP` | Nein | - | Auf `1` setzen um HTTP-Warnung zu unterdruecken |
 | `MCP_AUTH_TOKEN` | Nein | - | Bearer-Token fuer HTTP-Transport |
 | `MCP_HTTP_HOST` | Nein | `127.0.0.1` | Bind-Adresse fuer HTTP-Transport |
+| `MCP_ALLOWED_ORIGINS` | Nein | - | Kommagetrennte erlaubte Origins fuer HTTP-Transport (DNS-Rebinding-Schutz) |
+| `OPENXE_AUDIT_LOG` | Nein | - | Auf `1` setzen fuer Audit-Logging aller Tool-Aufrufe auf stderr |
 
 ## Erste Schritte
 
@@ -233,6 +235,8 @@ Im Standard-Modus (stdio) laeuft der MCP-Server als Subprocess deines KI-Assiste
 | `OPENXE_ALLOW_HTTP` | - | Auf `1` setzen um die HTTP-Warnung zu unterdruecken (z.B. im LAN) |
 | `MCP_AUTH_TOKEN` | - | Bearer-Token fuer den HTTP-Transport (nur mit `--http` relevant) |
 | `MCP_HTTP_HOST` | `127.0.0.1` | Bind-Adresse fuer HTTP-Transport (Standard: nur lokal) |
+| `MCP_ALLOWED_ORIGINS` | - | Kommagetrennte erlaubte Origins fuer HTTP-Transport (DNS-Rebinding-Schutz) |
+| `OPENXE_AUDIT_LOG` | - | Auf `1` setzen fuer Audit-Logging aller Tool-Aufrufe auf stderr |
 
 ### Read-Only Modus
 
@@ -253,6 +257,18 @@ MCP_AUTH_TOKEN=mein-geheimer-token npx -y github:Avatarsia/openxe-mcp-server -- 
 - Bindet standardmaessig auf `127.0.0.1` (nur lokal erreichbar)
 - `MCP_HTTP_HOST=0.0.0.0` fuer Netzwerkzugriff (nur hinter Reverse-Proxy mit TLS!)
 - `MCP_AUTH_TOKEN` erzwingt Bearer-Token-Authentifizierung auf dem HTTP-Endpoint
+
+### Audit-Logging
+
+```bash
+OPENXE_AUDIT_LOG=1 npx -y github:Avatarsia/openxe-mcp-server
+```
+
+Loggt jeden Tool-Aufruf mit Zeitstempel und Parametern auf stderr. Sensible Felder (IBAN, PayPal, Passwort) werden automatisch als `[REDACTED]` maskiert.
+
+### Tool Annotations
+
+Alle Tools sind mit MCP Tool Annotations versehen (readOnlyHint, destructiveHint, idempotentHint). MCP-Clients koennen damit automatisch vor destruktiven Aktionen warnen oder Read-Only-Tools ohne Bestaetigung ausfuehren.
 
 ## Wichtige Hinweise
 

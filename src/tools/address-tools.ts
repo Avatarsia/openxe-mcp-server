@@ -12,6 +12,13 @@ interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 }
 
 interface ToolResult {
@@ -132,12 +139,14 @@ export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
       "Invoice delivery: rechnung_permail, rechnung_papier, rechnung_anzahlpapier. " +
       "Alt. invoice address: abweichende_rechnungsadresse, rechnung_name/strasse/plz/ort/land/ansprechpartner/email. EDI: gln.",
     inputSchema: zodToJsonSchema(AddressCreateInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-edit-address",
     description:
       "Edit an existing address in OpenXE. Tries REST v1 PUT first, falls back to Legacy API if it fails. Required: id. All other address fields are optional.",
     inputSchema: zodToJsonSchema(AddressEditInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "openxe-create-delivery-address",
@@ -147,6 +156,7 @@ export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
       string,
       unknown
     >,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-edit-delivery-address",
@@ -155,6 +165,7 @@ export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
       string,
       unknown
     >,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "openxe-delete-delivery-address",
@@ -164,6 +175,7 @@ export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
         id: z.number().int().positive().describe("Delivery address ID"),
       })
     ) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   },
 ];
 

@@ -24,6 +24,13 @@ interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 }
 
 interface ToolResult {
@@ -56,6 +63,7 @@ export const BUSINESS_QUERY_TOOL_DEFINITION: ToolDefinition = {
       .map(([k, v]) => `${k} = ${v.description}`)
       .join("; "),
   inputSchema: zodToJsonSchema(BusinessQueryInput) as Record<string, unknown>,
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 };
 
 // --- Handler ---

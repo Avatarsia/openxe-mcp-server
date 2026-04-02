@@ -31,17 +31,20 @@ import { filterDeleted } from "../../src/utils/field-filter.js";
 
 const baseUrl = process.env.OPENXE_URL
   ? `${process.env.OPENXE_URL}/api/index.php`
-  : "http://192.168.0.143/api/index.php";
-const username = process.env.OPENXE_USERNAME || "user";
-const password = process.env.OPENXE_PASSWORD || "user";
+  : undefined;
+const username = process.env.OPENXE_USERNAME;
+const password = process.env.OPENXE_PASSWORD;
 
-const client = new OpenXEClient({
-  baseUrl,
-  username,
-  password,
-  timeout: 30000,
-  mode: "router",
-});
+// Client is only created when all env vars are present (tests are skipped otherwise)
+const client = (baseUrl && username && password)
+  ? new OpenXEClient({
+      baseUrl,
+      username,
+      password,
+      timeout: 30000,
+      mode: "router",
+    })
+  : undefined as unknown as OpenXEClient;
 
 /**
  * Fetch all records from an endpoint, paginating through all pages.
@@ -89,7 +92,7 @@ async function fetchAll(path: string): Promise<any[]> {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("Smart Filters -- Live API Integration", () => {
+describe.skipIf(!baseUrl || !username || !password)("Smart Filters -- Live API Integration", () => {
 
   // Cache fetched data across tests within this describe block
   let addresses: any[] | null = null;

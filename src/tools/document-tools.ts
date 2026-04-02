@@ -19,6 +19,13 @@ interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 }
 
 interface ToolResult {
@@ -33,18 +40,21 @@ export const DOCUMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
     description:
       "Create a sales order (Auftrag) via Legacy API. Required: adresse (customer ID), positionen (line items with nummer + menge). Optional: datum, projekt, zahlungsweise, lieferbedingung, freitext. Workflow: Create order -> openxe-convert-order-to-invoice (WeiterfuehrenAuftragZuRechnung) creates linked invoice + delivery note.",
     inputSchema: zodToJsonSchema(OrderCreateInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-create-quote",
     description:
       "Create a quote (Angebot) via Legacy API. Required: adresse, positionen. Optional: datum, gueltigbis.",
     inputSchema: zodToJsonSchema(QuoteCreateInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-create-invoice",
     description:
       "Create a standalone invoice (Rechnung) via Legacy API. For order-linked invoices, prefer openxe-convert-order-to-invoice instead. Required: adresse, positionen (with preis on each item).",
     inputSchema: zodToJsonSchema(InvoiceCreateInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-create-credit-note",
@@ -54,6 +64,7 @@ export const DOCUMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       string,
       unknown
     >,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
 
   // === Workflow ===
@@ -62,34 +73,40 @@ export const DOCUMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
     description:
       "Convert an existing quote (Angebot) to a sales order (Auftrag). Required: id (quote ID).",
     inputSchema: zodToJsonSchema(DocumentIdInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-convert-order-to-invoice",
     description:
       "Convert a sales order to a linked invoice + delivery note via WeiterfuehrenAuftragZuRechnung. This is the standard workflow — creates invoice and delivery note in one step. Required: id (order ID).",
     inputSchema: zodToJsonSchema(DocumentIdInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-release-order",
     description:
       "Release/approve a sales order for processing. Required: id.",
     inputSchema: zodToJsonSchema(DocumentIdInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-release-invoice",
     description: "Release/finalize an invoice. Required: id.",
     inputSchema: zodToJsonSchema(DocumentIdInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-mark-invoice-paid",
     description: "Mark an invoice as paid. Required: id.",
     inputSchema: zodToJsonSchema(DocumentIdInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-delete-draft-invoice",
     description:
       "Delete a DRAFT invoice (only works if belegnr is empty or '0'). Cascades to positions and protocol entries. Required: id.",
     inputSchema: zodToJsonSchema(DocumentIdInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   },
 
   // === Edit ===
@@ -98,18 +115,21 @@ export const DOCUMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
     description:
       "Auftrag bearbeiten via Legacy API (AuftragEdit). Aendert Kopffelder — Positionen koennen nach Erstellung nicht geaendert werden. Required: id. Optional: datum, projekt, zahlungsweise, lieferbedingung, freitext, internebezeichnung, versandart, lieferdatum.",
     inputSchema: zodToJsonSchema(EditOrderInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "openxe-edit-invoice",
     description:
       "Rechnung bearbeiten via Legacy API (RechnungEdit). Aendert Kopffelder — Positionen koennen nach Erstellung nicht geaendert werden. Required: id. Optional: datum, projekt, zahlungsweise, zahlungszieltage, freitext, internebezeichnung.",
     inputSchema: zodToJsonSchema(EditInvoiceInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "openxe-edit-quote",
     description:
       "Angebot bearbeiten via Legacy API (AngebotEdit). Aendert Kopffelder — Positionen koennen nach Erstellung nicht geaendert werden. Required: id. Optional: datum, gueltigbis, projekt, zahlungsweise, lieferbedingung, freitext, internebezeichnung.",
     inputSchema: zodToJsonSchema(EditQuoteInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "openxe-edit-delivery-note",
@@ -119,6 +139,7 @@ export const DOCUMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       string,
       unknown
     >,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "openxe-edit-credit-memo",
@@ -128,6 +149,7 @@ export const DOCUMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       string,
       unknown
     >,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
 
   // === PDF ===
@@ -136,6 +158,7 @@ export const DOCUMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
     description:
       "Get any document as PDF (base64 encoded). Required: typ (angebot|auftrag|rechnung|lieferschein|gutschrift|bestellung), id.",
     inputSchema: zodToJsonSchema(BelegPDFInput) as Record<string, unknown>,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
 ];
 

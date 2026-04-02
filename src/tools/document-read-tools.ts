@@ -79,6 +79,13 @@ interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 }
 
 interface ToolResult {
@@ -152,11 +159,13 @@ export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = DOC_TYPES.flatMa
       name: dt.listName,
       description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Gibt eine kompakte Liste zurueck (nur Schluesselfelder: id, belegnr, status, name, datum, summe). Fuer alle Details eines Eintrags nutze ${dt.getName}. Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte, zeitraum (z.B. 'dieser-monat', 'Q3-2025'), status_preset (z.B. 'offen', 'unbezahlt', 'ueberfaellig', 'bezahlt', 'entwurf', 'mahnkandidaten'). Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.`,
       inputSchema: zodToJsonSchema(ListFilters) as Record<string, unknown>,
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     {
       name: dt.getName,
       description: `Einzelnes Dokument aus ${dt.labelDe} abrufen (GET /v1/belege/${dt.path}/{id}). Gibt ALLE Felder eines einzelnen Datensatzes zurueck. Optional: include (z.B. 'positionen,protokoll').`,
       inputSchema: zodToJsonSchema(GetByIdInput) as Record<string, unknown>,
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
   ]
 );

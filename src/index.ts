@@ -74,6 +74,22 @@ import {
   handleProcurementTool,
 } from "./tools/procurement-tools.js";
 
+// ---------------------------------------------------------------------------
+// Audit logging (opt-in via OPENXE_AUDIT_LOG=1)
+// ---------------------------------------------------------------------------
+function auditLog(toolName: string, args: Record<string, unknown>): void {
+  if (!process.env.OPENXE_AUDIT_LOG) return;
+  const timestamp = new Date().toISOString();
+  // Redact sensitive fields
+  const safeArgs = { ...args };
+  for (const key of Object.keys(safeArgs)) {
+    if (/password|secret|token|key|iban|swift|paypal/i.test(key)) {
+      safeArgs[key] = '[REDACTED]';
+    }
+  }
+  console.error(`[AUDIT] ${timestamp} tool=${toolName} args=${JSON.stringify(safeArgs)}`);
+}
+
 async function main() {
   const config = loadConfig();
   const client = new OpenXEClient(config);
@@ -374,6 +390,8 @@ async function main() {
     const { name, arguments: args } = request.params;
     const toolArgs = (args ?? {}) as Record<string, unknown>;
 
+    auditLog(name, toolArgs);
+
     // In readonly mode, reject any tool not in the readonly set
     if (config.mode === "readonly" && !readonlyToolNames.has(name)) {
       return {
@@ -454,6 +472,17 @@ async function main() {
           if (!provided || provided !== `Bearer ${authToken}`) {
             res.writeHead(401, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Unauthorized \u2014 set Authorization: Bearer <MCP_AUTH_TOKEN>" }));
+            return;
+          }
+        }
+
+        // DNS rebinding protection: validate Origin header
+        const allowedOrigins = process.env.MCP_ALLOWED_ORIGINS?.split(',').map(o => o.trim());
+        if (allowedOrigins && allowedOrigins.length > 0) {
+          const origin = req.headers.origin || req.headers.referer;
+          if (!origin || !allowedOrigins.some(allowed => (origin as string).startsWith(allowed))) {
+            res.writeHead(403, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Forbidden \u2014 Origin not allowed. Set MCP_ALLOWED_ORIGINS." }));
             return;
           }
         }
