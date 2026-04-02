@@ -67,8 +67,9 @@ export async function fetchFilteredList(
     page++;
   }
 
-  // Truncate to maxResults
-  const { data: truncated, truncated: wasTruncated } = truncateWithWarning(allRecords, maxResults);
+  // Truncate to maxResults (skip when fetchAll — caller handles truncation after where)
+  const effectiveMax = fetchAll ? allRecords.length : maxResults;
+  const { data: truncated, truncated: wasTruncated } = truncateWithWarning(allRecords, effectiveMax);
 
   // Apply slim (unless caller wants raw data for further filtering)
   let finalData = truncated;

@@ -1,0 +1,21 @@
+=== Comprehensive Smart Where Filter Verification ===
+
+✓ 1. PLZ startsWith '2' (2 results)
+✓ 2. PLZ startsWith '5' (4 results)
+✓ 3. Name contains 'Muster' (0 results)
+✓ 4. Name contains '3D' (2 results)
+✓ 5. Email notEmpty (46 results)
+✓ 6. Email empty (4 results)
+✓ 7. Phone notEmpty (47 results)
+✓ 8. Phone empty (3 results)
+✓ 9. Orders gesamtsumme > 100 (38 results)
+✓ 10. Orders gesamtsumme < 50 (8 results)
+✓ 11. Orders gesamtsumme >= 200 (35 results)
+✓ 12. Orders gesamtsumme <= 10 (5 results)
+✓ 13. Orders status 'freigegeben' (46 results)
+✓ 14. Orders status 'versendet' (0 results)
+
+=== Test Summary ===
+Total: 14 tests
+Passed: 14 ✓
+Failed: 0 ✗
