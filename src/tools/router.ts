@@ -6,6 +6,7 @@ import { handleDocumentReadTool } from "./document-read-tools.js";
 import { handleDocumentTool } from "./document-tools.js";
 import { handleAddressTool } from "./address-tools.js";
 import { handleSubscriptionTool } from "./subscription-tools.js";
+import { handleTimeTool } from "./time-tools.js";
 
 // --- Types ---
 
@@ -22,13 +23,13 @@ interface ToolResult {
 
 // --- Action Registry ---
 
-type Category = "stammdaten" | "belege" | "shop" | "system";
+type Category = "stammdaten" | "belege" | "shop" | "zeiterfassung" | "system";
 
 interface ActionEntry {
   action: string;
   label: string;
   category: Category;
-  handler: "read" | "document-read" | "document" | "address" | "subscription";
+  handler: "read" | "document-read" | "document" | "address" | "subscription" | "time";
   toolName: string; // original openxe-* tool name
 }
 
@@ -79,6 +80,15 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "create-resubmission", label: "Wiedervorlage/Aufgabe anlegen", category: "shop", handler: "subscription", toolName: "openxe-create-resubmission" },
   { action: "upload-file", label: "Datei hochladen (an Auftrag/Kunde/Artikel etc. anhaengen)", category: "shop", handler: "subscription", toolName: "openxe-upload-file" },
 
+  // === Zeiterfassung ===
+  { action: "clock-status", label: "Stechuhr-Status abfragen (ein-/ausgestempelt)", category: "zeiterfassung", handler: "time", toolName: "openxe-clock-status" },
+  { action: "clock-action", label: "Ein-/Ausstempeln (kommen/gehen/pausestart/pausestop)", category: "zeiterfassung", handler: "time", toolName: "openxe-clock-action" },
+  { action: "clock-summary", label: "Wochen-Zeituebersicht (Soll/Ist, Ueberstunden, Urlaub)", category: "zeiterfassung", handler: "time", toolName: "openxe-clock-summary" },
+  { action: "list-time-entries", label: "Zeiteintraege auflisten (Filter: adresse, projekt, von, bis)", category: "zeiterfassung", handler: "time", toolName: "openxe-list-time-entries" },
+  { action: "create-time-entry", label: "Zeiteintrag erstellen", category: "zeiterfassung", handler: "time", toolName: "openxe-create-time-entry" },
+  { action: "edit-time-entry", label: "Zeiteintrag bearbeiten", category: "zeiterfassung", handler: "time", toolName: "openxe-edit-time-entry" },
+  { action: "delete-time-entry", label: "Zeiteintrag loeschen", category: "zeiterfassung", handler: "time", toolName: "openxe-delete-time-entry" },
+
   // === System ===
   { action: "server-time", label: "Serverzeit abrufen", category: "system", handler: "subscription", toolName: "openxe-server-time" },
 ];
@@ -93,7 +103,7 @@ for (const entry of ACTION_REGISTRY) {
 
 const DiscoverInput = z.object({
   category: z
-    .enum(["stammdaten", "belege", "shop", "system", "alle"])
+    .enum(["stammdaten", "belege", "shop", "zeiterfassung", "system", "alle"])
     .optional()
     .default("alle")
     .describe("Kategorie-Filter (default: alle)"),
@@ -110,10 +120,11 @@ const CATEGORY_LABELS: Record<Category, string> = {
   stammdaten: "Stammdaten",
   belege: "Belege",
   shop: "Shop / CRM / Sonstiges",
+  zeiterfassung: "Zeiterfassung",
   system: "System",
 };
 
-const CATEGORY_ORDER: Category[] = ["stammdaten", "belege", "shop", "system"];
+const CATEGORY_ORDER: Category[] = ["stammdaten", "belege", "shop", "zeiterfassung", "system"];
 
 export function handleDiscover(args: Record<string, unknown>): ToolResult {
   const { category } = DiscoverInput.parse(args);
@@ -193,6 +204,8 @@ export async function handleRouter(
       return handleAddressTool(entry.toolName, params, client);
     case "subscription":
       return handleSubscriptionTool(entry.toolName, params, client);
+    case "time":
+      return handleTimeTool(entry.toolName, params, client);
     default:
       return {
         content: [{ type: "text", text: `Internal error: unknown handler "${entry.handler}"` }],

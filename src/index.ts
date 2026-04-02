@@ -44,6 +44,10 @@ import {
   handleSubscriptionTool,
 } from "./tools/subscription-tools.js";
 import {
+  TIME_TOOL_DEFINITIONS,
+  handleTimeTool,
+} from "./tools/time-tools.js";
+import {
   READ_TOOL_DEFINITIONS,
   handleReadTool,
 } from "./tools/read-tools.js";
@@ -193,6 +197,7 @@ async function main() {
     ...DOCUMENT_TOOL_DEFINITIONS,
     ...DOCUMENT_READ_TOOL_DEFINITIONS,
     ...SUBSCRIPTION_TOOL_DEFINITIONS,
+    ...TIME_TOOL_DEFINITIONS,
     ...READ_TOOL_DEFINITIONS,
   ];
 
@@ -222,6 +227,9 @@ async function main() {
   const subscriptionToolNames = new Set(
     SUBSCRIPTION_TOOL_DEFINITIONS.map((t) => t.name)
   );
+  const timeToolNames = new Set(
+    TIME_TOOL_DEFINITIONS.map((t) => t.name)
+  );
   const readToolNames = new Set(
     READ_TOOL_DEFINITIONS.map((t) => t.name)
   );
@@ -250,6 +258,9 @@ async function main() {
     }
     if (subscriptionToolNames.has(name)) {
       return handleSubscriptionTool(name, toolArgs, client) as Promise<ServerResult>;
+    }
+    if (timeToolNames.has(name)) {
+      return handleTimeTool(name, toolArgs, client) as Promise<ServerResult>;
     }
     if (readToolNames.has(name)) {
       return handleReadTool(name, toolArgs, client) as Promise<ServerResult>;
