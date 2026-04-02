@@ -44,7 +44,7 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "get-address", label: "Adresse nach ID abrufen (alle Details)", category: "stammdaten", handler: "read", toolName: "openxe-get-address" },
   { action: "list-articles", label: "Artikel auflisten [+Smart Filter] (Filter: nummer, name_de; Include: verkaufspreise, lagerbestand)", category: "stammdaten", handler: "read", toolName: "openxe-list-articles" },
   { action: "get-article", label: "Artikel nach ID (alle Details + Preise + Lager + Einkaufspreise via includeEinkaufspreise)", category: "stammdaten", handler: "read", toolName: "openxe-get-article" },
-  { action: "create-address", label: "Kunde/Lieferant anlegen (alle Felder: name, typ, strasse, plz, ort, land, email, telefon, telefax, mobil, internetseite, ansprechpartner, iban, swift, inhaber, bank, zahlungszieltage, ustid, rolle, lieferantennummer, Dokumentversand: angebot_email/auftrag_email/rechnungs_email/gutschrift_email/lieferschein_email/bestellung_email + *_cc, rechnung_permail, rechnung_papier, abweichende_rechnungsadresse)", category: "stammdaten", handler: "address", toolName: "openxe-create-address" },
+  { action: "create-address", label: "Kunde/Lieferant anlegen (alle Felder: name, typ, strasse, plz, ort, land, email, telefon, telefax, mobil, internetseite, ansprechpartner, iban, swift, inhaber, bank, zahlungszieltage, ustid, rolle, lieferantennummer, Dokumentversand: angebot_email/auftrag_email/rechnungs_email/gutschrift_email/lieferschein_email/bestellung_email + *_cc, rechnung_permail, rechnung_papier, abweichende_rechnungsadresse, Lieferant-Konditionen: zahlungsweiselieferant/zahlungszieltagelieferant/zahlungszielskontolieferant, PayPal: paypal/paypalinhaber/paypalwaehrung, SEPA: mandatsreferenz/glaeubigeridentnr, geburtstag)", category: "stammdaten", handler: "address", toolName: "openxe-create-address" },
   { action: "edit-address", label: "Adresse bearbeiten", category: "stammdaten", handler: "address", toolName: "openxe-edit-address" },
   { action: "create-delivery-address", label: "Lieferadresse anlegen", category: "stammdaten", handler: "address", toolName: "openxe-create-delivery-address" },
   { action: "edit-delivery-address", label: "Lieferadresse bearbeiten", category: "stammdaten", handler: "address", toolName: "openxe-edit-delivery-address" },
@@ -90,7 +90,9 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "release-purchase-order", label: "Bestellung freigeben", category: "beschaffung", handler: "procurement", toolName: "openxe-release-purchase-order" },
 
   // === Shop / Sonstiges ===
-  { action: "create-subscription", label: "Abo-Artikel anlegen", category: "shop", handler: "subscription", toolName: "openxe-create-subscription" },
+  { action: "list-subscriptions", label: "Abo-Artikel auflisten [+Smart Filter] (Filter: adresse, artikel, gruppe, projekt, bezeichnung)", category: "shop", handler: "subscription", toolName: "openxe-list-subscriptions" },
+  { action: "get-subscription", label: "Abo-Artikel nach ID abrufen (alle Details)", category: "shop", handler: "subscription", toolName: "openxe-get-subscription" },
+  { action: "create-subscription", label: "Abo-Artikel anlegen (bezeichnung, adresse, preisart: monat/jahr/wochen/einmalig/30tage/360tage)", category: "shop", handler: "subscription", toolName: "openxe-create-subscription" },
   { action: "edit-subscription", label: "Abo-Artikel bearbeiten", category: "shop", handler: "subscription", toolName: "openxe-edit-subscription" },
   { action: "delete-subscription", label: "Abo-Artikel kuendigen", category: "shop", handler: "subscription", toolName: "openxe-delete-subscription" },
   { action: "create-crm-document", label: "CRM-Dokument anlegen (Notiz/Email/Telefonat)", category: "shop", handler: "subscription", toolName: "openxe-create-crm-document" },

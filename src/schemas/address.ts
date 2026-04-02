@@ -114,6 +114,49 @@ export const AddressCreateInput = z.object({
 
   // Electronic dispatch
   gln: z.string().optional().describe("Global Location Number (GLN) for EDI"),
+
+  // Supplier payment terms
+  zahlungsweiselieferant: z.string().optional().describe("Supplier payment method (rechnung, vorkasse, lastschrift)"),
+  zahlungszieltagelieferant: z.string().optional().describe("Supplier payment term days"),
+  zahlungszieltageskontolieferant: z.string().optional().describe("Supplier skonto days"),
+  zahlungszielskontolieferant: z.string().optional().describe("Supplier skonto percentage"),
+  versandartlieferant: z.string().optional().describe("Default shipping method from supplier"),
+  kundennummerlieferant: z.string().optional().describe("Our customer number at this supplier"),
+  lieferbedingung: z.string().optional().describe("Delivery terms / Incoterms"),
+  umsatzsteuer_lieferant: z.string().optional().describe("Supplier VAT setting"),
+  hinweistextlieferant: z.string().optional().describe("Supplier hint/note text"),
+
+  // Supplier blocks
+  liefersperre: z.number().optional().describe("Delivery block (1=blocked, 0=open)"),
+  liefersperregrund: z.string().optional().describe("Delivery block reason"),
+  liefersperredatum: z.string().optional().describe("Delivery block date YYYY-MM-DD"),
+  portofreilieferant_aktiv: z.number().optional().describe("Supplier free-shipping active (1=yes)"),
+  portofreiablieferant: z.string().optional().describe("Supplier free-shipping threshold amount"),
+
+  // Bank (legacy)
+  konto: z.string().optional().describe("Bank account number (legacy, pre-IBAN)"),
+  blz: z.string().optional().describe("Bank routing code (legacy, pre-IBAN)"),
+
+  // PayPal
+  paypal: z.string().optional().describe("PayPal email address"),
+  paypalinhaber: z.string().optional().describe("PayPal account holder"),
+  paypalwaehrung: z.string().optional().describe("PayPal currency (EUR, USD)"),
+
+  // SEPA
+  mandatsreferenz: z.string().optional().describe("SEPA mandate reference ID"),
+  mandatsreferenzdatum: z.string().optional().describe("SEPA mandate date YYYY-MM-DD"),
+  mandatsreferenzaenderung: z.number().optional().describe("SEPA mandate changed (1=yes)"),
+  mandatsreferenzart: z.string().optional().describe("SEPA type: einmalig or wiederkehrend"),
+  glaeubigeridentnr: z.string().optional().describe("SEPA creditor identifier (Glaeubiger-ID)"),
+
+  // Personal / Misc
+  geburtstag: z.string().optional().describe("Birthday YYYY-MM-DD"),
+  kennung: z.string().optional().describe("Internal identifier / tag"),
+  nachname: z.string().optional().describe("Surname (separate from name field)"),
+  bundesland: z.string().optional().describe("Federal state (e.g. Bayern, NRW)"),
+  rabatt: z.string().optional().describe("Default discount percentage"),
+  provision: z.string().optional().describe("Commission percentage"),
+  infoauftragserfassung: z.string().optional().describe("Info text shown during order entry"),
 });
 
 export const AddressEditInput = z.object({

@@ -132,6 +132,7 @@ export const SLIM_FIELDS = {
   category: ["id", "bezeichnung", "parent", "projekt"],
   shippingMethod: ["id", "bezeichnung", "type", "aktiv"],
   file: ["id", "titel", "dateiname", "datum", "size"],
+  subscription: ["id", "bezeichnung", "adresse", "artikel", "preisart", "preis", "menge", "aktiv"],
 } as const;
 
 export const MAX_LIST_RESULTS = 50;

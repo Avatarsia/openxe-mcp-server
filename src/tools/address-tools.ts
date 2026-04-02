@@ -57,6 +57,20 @@ export function normalizeAddressFields(input: Record<string, any>): Record<strin
     'order_cc': 'auftrag_cc',
     'quote_email': 'angebot_email',
     'quote_cc': 'angebot_cc',
+    // Supplier payment aliases
+    'zahlungsweise_lieferant': 'zahlungsweiselieferant',
+    'zahlungsziel_lieferant': 'zahlungszieltagelieferant',
+    'skonto_lieferant': 'zahlungszielskontolieferant',
+    // PayPal aliases
+    'paypal_email': 'paypal',
+    'paypal_waehrung': 'paypalwaehrung',
+    // SEPA aliases
+    'sepa_mandatsreferenz': 'mandatsreferenz',
+    'sepa_referenz': 'mandatsreferenz',
+    'glaeubiger_id': 'glaeubigeridentnr',
+    // Misc aliases
+    'birthday': 'geburtstag',
+    'discount': 'rabatt',
   };
 
   for (const [wrong, correct] of Object.entries(fieldMap)) {
@@ -162,7 +176,9 @@ export async function handleAddressTool(
       if (input.rolle && /lieferant/i.test(input.rolle) && !input.lieferantennummer) {
         input.lieferantennummer = "NEU";
       }
-      const result = await client.legacyPost("AdresseCreate", input);
+      // Strip 'rolle' — it's a virtual/computed field, not a DB column. Sending it crashes the Legacy API (500).
+      const { rolle, ...payload } = input;
+      const result = await client.legacyPost("AdresseCreate", payload);
       return {
         content: [
           {

@@ -2,17 +2,27 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { DateString } from "../schemas/common.js";
+import { fetchFilteredList, FilteredListResult, MAX_LIST_RESULTS, applySlimMode } from "../utils/field-filter.js";
+import { applyAggregate, AggregateOp, applySort, applyLimit, applyFields, applyWhere, formatAsTable, formatAsCsv, formatAsIds } from "../utils/smart-filters.js";
+import { truncateWithWarning } from "../utils/field-filter.js";
 
 const SubscriptionCreateInput = z.object({
   adresse: z.number().int().positive().describe("Customer address ID"),
-  artikel: z.number().int().positive().describe("Article ID"),
-  menge: z.number().positive().describe("Quantity"),
-  intervall_monate: z.number().int().positive().describe("Interval in months"),
-  startdatum: DateString.describe("Start date YYYY-MM-DD"),
-  preis: z.number().optional().describe("Price override"),
-  waehrung: z.string().optional().describe("Currency code"),
+  bezeichnung: z.string().describe("Subscription name/description (required by API)"),
+  artikel: z.number().int().positive().optional().describe("Article ID (numeric). Provide either artikel or artikelnummer."),
+  artikelnummer: z.string().optional().describe("Article number string (alternative to artikel ID)"),
+  preisart: z.enum(["monat", "jahr", "wochen", "einmalig", "30tage", "360tage"]).describe("Pricing type / interval: monat, jahr, wochen, einmalig, 30tage, 360tage"),
+  dokumenttyp: z.enum(["rechnung", "auftrag"]).optional().describe("Document type to generate: rechnung or auftrag"),
+  zahlzyklus: z.number().int().positive().optional().describe("Payment cycle (number of intervals between billings)"),
+  startdatum: DateString.optional().describe("Start date YYYY-MM-DD"),
   enddatum: z.string().optional().describe("End date YYYY-MM-DD"),
-  abogruppe: z.number().int().optional().describe("Subscription group ID"),
+  preis: z.number().optional().describe("Price override"),
+  menge: z.number().positive().optional().describe("Quantity"),
+  waehrung: z.string().optional().describe("Currency code (e.g. EUR)"),
+  rabatt: z.number().optional().describe("Discount percentage"),
+  gruppe: z.number().int().optional().describe("Subscription group ID"),
+  projekt: z.number().int().optional().describe("Project ID"),
+  reihenfolge: z.number().int().optional().describe("Sort order / position"),
 });
 
 const SubscriptionEditInput = z
@@ -70,6 +80,52 @@ const FileUploadInput = z.object({
 
 const ServerTimeInput = z.object({}).describe("No parameters required");
 
+// --- Slim fields for subscriptions ---
+
+const SUBSCRIPTION_SLIM_FIELDS = ["id", "bezeichnung", "adresse", "artikel", "artikelnummer", "preisart", "preis", "menge", "startdatum", "enddatum", "gruppe", "projekt"] as const;
+
+// --- Aggregate schema (shared by list tools) ---
+
+const AggregateSchema = z
+  .union([
+    z.literal("count"),
+    z.object({ sum: z.string() }),
+    z.object({ avg: z.string() }),
+    z.object({ min: z.string() }),
+    z.object({ max: z.string() }),
+    z.object({ groupBy: z.string(), count: z.boolean().optional(), sum: z.string().optional() }),
+  ])
+  .optional()
+  .describe("Aggregation: 'count', {sum:'feld'}, {avg:'feld'}, {min:'feld'}, {max:'feld'}, {groupBy:'feld', sum?:'feld'}.");
+
+const whereSchema = z.record(z.string(), z.record(z.string(), z.any())).optional().describe(
+  'Client-seitige Filter. Beispiele: {bezeichnung: {contains: "Hosting"}}, {preis: {gt: 100}}'
+);
+
+// --- List/Get subscription input schemas ---
+
+const ListSubscriptionsInput = z.object({
+  adresse: z.number().int().optional().describe("Filter by customer address ID"),
+  artikel: z.number().int().optional().describe("Filter by article ID"),
+  gruppe: z.number().int().optional().describe("Filter by subscription group ID"),
+  projekt: z.number().int().optional().describe("Filter by project ID"),
+  bezeichnung: z.string().optional().describe("Filter by subscription name (client-side contains filter)"),
+  include_deleted: z.boolean().optional().describe("Include deleted records (default: false)"),
+  page: z.number().int().positive().optional().describe("Page number (default 1)"),
+  items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  sort_field: z.string().optional().describe("Sort field (e.g. 'bezeichnung', 'startdatum', 'preis')"),
+  sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sort order"),
+  limit: z.number().int().positive().max(200).optional().describe("Max results"),
+  fields: z.array(z.string()).optional().describe("Only return these fields"),
+  aggregate: AggregateSchema,
+  format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Output format: json, table, csv, ids"),
+  where: whereSchema,
+});
+
+const GetSubscriptionInput = z.object({
+  id: z.number().int().positive().describe("Subscription ID"),
+});
+
 interface ToolDefinition {
   name: string;
   description: string;
@@ -83,9 +139,27 @@ interface ToolResult {
 
 export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
+    name: "openxe-list-subscriptions",
+    description:
+      "Liste aller Abo-Artikel (GET /v1/aboartikel). Kompakte Liste mit Schluesselfeldern. Optionale Filter: adresse, artikel, gruppe, projekt, bezeichnung. Smart Filter: where, sort_field, sort_order, limit, fields, format, aggregate.",
+    inputSchema: zodToJsonSchema(ListSubscriptionsInput) as Record<
+      string,
+      unknown
+    >,
+  },
+  {
+    name: "openxe-get-subscription",
+    description:
+      "Einzelnen Abo-Artikel abrufen (GET /v1/aboartikel/{id}). Gibt alle Felder zurueck inkl. Artikel-, Gruppen- und Adressinformationen.",
+    inputSchema: zodToJsonSchema(GetSubscriptionInput) as Record<
+      string,
+      unknown
+    >,
+  },
+  {
     name: "openxe-create-subscription",
     description:
-      "Create a recurring subscription item. Required: adresse, artikel, menge, intervall_monate, startdatum.",
+      "Abo-Artikel anlegen. Pflichtfelder: adresse, bezeichnung, preisart (monat/jahr/wochen/einmalig/30tage/360tage). Optional: artikel oder artikelnummer, dokumenttyp, zahlzyklus, startdatum, preis, menge, etc.",
     inputSchema: zodToJsonSchema(SubscriptionCreateInput) as Record<
       string,
       unknown
@@ -147,12 +221,111 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
   },
 ];
 
+// --- Helper: build list response with metadata wrapper ---
+
+function buildListResponse(result: FilteredListResult, hint: string, format?: string, fields?: string[]): ToolResult {
+  const data = result.data as any[];
+
+  if (format === "table") return { content: [{ type: "text", text: formatAsTable(data, fields) }] };
+  if (format === "csv") return { content: [{ type: "text", text: formatAsCsv(data, fields) }] };
+  if (format === "ids") return { content: [{ type: "text", text: formatAsIds(data) }] };
+
+  const response: Record<string, unknown> = {};
+  let info = `${result.meta.returned} Ergebnisse`;
+  if (result.meta.filtered_out > 0) {
+    info += ` (${result.meta.filtered_out} geloeschte ausgeblendet). Fuer alle: include_deleted=true`;
+  }
+  if (result.meta.truncated) {
+    info += ` — Liste gekuerzt, es gibt weitere Eintraege. Nutze Filter zum Eingrenzen.`;
+  }
+  response._info = info;
+  response._hint = hint;
+  response.data = result.data;
+
+  return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
+}
+
 export async function handleSubscriptionTool(
   toolName: string,
   args: Record<string, unknown>,
   client: OpenXEClient
 ): Promise<ToolResult> {
   switch (toolName) {
+    case "openxe-list-subscriptions": {
+      const parsed = ListSubscriptionsInput.parse(args);
+      const { bezeichnung, include_deleted, sort_field, sort_order, limit, fields, aggregate, format, where, ...serverParams } = parsed;
+
+      // Build API query params (server-side filters)
+      const apiParams: Record<string, string | number | undefined> = {};
+      if (serverParams.adresse) apiParams.adresse = serverParams.adresse;
+      if (serverParams.artikel) apiParams.artikel = serverParams.artikel;
+      if (serverParams.gruppe) apiParams.gruppe = serverParams.gruppe;
+      if (serverParams.projekt) apiParams.projekt = serverParams.projekt;
+
+      const result = await fetchFilteredList(client, "/v1/aboartikel", apiParams, {
+        slimFields: [...SUBSCRIPTION_SLIM_FIELDS],
+        includeDeleted: include_deleted,
+        skipSlim: !!(where || fields || bezeichnung),
+        fetchAll: !!(where || bezeichnung),
+      });
+
+      let data: any[] = result.data;
+
+      // Client-side bezeichnung filter
+      if (bezeichnung) {
+        const lower = bezeichnung.toLowerCase();
+        data = data.filter((r: any) => String(r.bezeichnung ?? "").toLowerCase().includes(lower));
+      }
+
+      // Smart filters: where
+      if (where) {
+        data = applyWhere(data, where);
+      }
+
+      // Aggregate: return aggregation instead of data list
+      if (aggregate) {
+        const aggResult = applyAggregate(data, aggregate as AggregateOp);
+        return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
+      }
+
+      // Sort
+      if (sort_field) {
+        data = applySort(data, { field: sort_field, order: sort_order || "asc" });
+      }
+      // Limit
+      if (limit) {
+        data = applyLimit(data, limit);
+      }
+      // Fields or slim
+      if (fields && fields.length > 0) {
+        data = applyFields(data, fields);
+      } else if (where || bezeichnung) {
+        data = applySlimMode(data, [...SUBSCRIPTION_SLIM_FIELDS]) as any[];
+      }
+      // Truncate
+      if (!limit) {
+        const { data: trunc, truncated: truncFlag } = truncateWithWarning(data, MAX_LIST_RESULTS);
+        result.data = trunc;
+        result.meta.returned = trunc.length;
+        result.meta.truncated = truncFlag || result.meta.truncated;
+      } else {
+        result.data = data;
+        result.meta.returned = data.length;
+      }
+
+      return buildListResponse(result, "Fuer alle Details eines Abos nutze openxe-get-subscription mit der ID.", format);
+    }
+
+    case "openxe-get-subscription": {
+      const { id } = GetSubscriptionInput.parse(args);
+      const result = await client.get(`/v1/aboartikel/${id}`, { include: "artikel,gruppe,adresse" });
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(result.data, null, 2) },
+        ],
+      };
+    }
+
     case "openxe-create-subscription": {
       const input = SubscriptionCreateInput.parse(args);
       const result = await client.post("/v1/aboartikel", input);
