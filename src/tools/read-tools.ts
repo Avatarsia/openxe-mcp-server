@@ -2,6 +2,21 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList, FilteredListResult } from "../utils/field-filter.js";
+import { applyAggregate, AggregateOp, formatAsTable, formatAsCsv, formatAsIds } from "../utils/smart-filters.js";
+
+// --- Aggregate schema (shared by all list tools) ---
+
+const AggregateSchema = z
+  .union([
+    z.literal("count"),
+    z.object({ sum: z.string() }),
+    z.object({ avg: z.string() }),
+    z.object({ min: z.string() }),
+    z.object({ max: z.string() }),
+    z.object({ groupBy: z.string(), count: z.boolean().optional(), sum: z.string().optional() }),
+  ])
+  .optional()
+  .describe("Aggregation: 'count', {sum:'feld'}, {avg:'feld'}, {min:'feld'}, {max:'feld'}, {groupBy:'feld', sum?:'feld'}. Wird STATT der Datenliste zurueckgegeben.");
 
 // --- Input Schemas ---
 
@@ -28,6 +43,8 @@ const ListAddressesInput = z.object({
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  aggregate: AggregateSchema,
+  format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
 });
 
 const GetAddressInput = z.object({
@@ -51,6 +68,8 @@ const ListArticlesInput = z.object({
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  aggregate: AggregateSchema,
+  format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
 });
 
 const GetArticleInput = z.object({
@@ -73,6 +92,8 @@ const ListCategoriesInput = z.object({
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  aggregate: AggregateSchema,
+  format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
 });
 
 const ListShippingMethodsInput = z.object({
@@ -82,6 +103,8 @@ const ListShippingMethodsInput = z.object({
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  aggregate: AggregateSchema,
+  format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
 });
 
 const ListFilesInput = z.object({
@@ -94,6 +117,8 @@ const ListFilesInput = z.object({
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
   page: z.number().int().positive().optional().describe("Page number (default 1)"),
   items: z.number().int().positive().optional().describe("Items per page (default 20)"),
+  aggregate: AggregateSchema,
+  format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
 });
 
 // --- Types ---
@@ -158,7 +183,15 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
 
 // --- Helper: build list response with metadata wrapper ---
 
-function buildListResponse(result: FilteredListResult, hint: string): ToolResult {
+function buildListResponse(result: FilteredListResult, hint: string, format?: string, fields?: string[]): ToolResult {
+  const data = result.data as any[];
+
+  // Apply non-JSON formats BEFORE wrapping in metadata
+  if (format === "table") return { content: [{ type: "text", text: formatAsTable(data, fields) }] };
+  if (format === "csv") return { content: [{ type: "text", text: formatAsCsv(data, fields) }] };
+  if (format === "ids") return { content: [{ type: "text", text: formatAsIds(data) }] };
+
+  // Default: json with metadata wrapper
   const response: Record<string, unknown> = {};
 
   // Build info string
@@ -187,7 +220,7 @@ export async function handleReadTool(
   switch (name) {
     case "openxe-list-addresses": {
       const args = ListAddressesInput.parse(input);
-      const { name: nameFilter, email, land, include_deleted, ...serverParams } = args;
+      const { name: nameFilter, email, land, include_deleted, aggregate, ...serverParams } = args;
 
       // Only kundennummer goes to the server
       const apiParams: Record<string, string | number | undefined> = {};
@@ -218,6 +251,12 @@ export async function handleReadTool(
         filtered = filtered.filter((a: any) => String(a.land ?? "").toUpperCase() === upperLand);
       }
 
+      // Aggregate: return aggregation result instead of data list
+      if (aggregate) {
+        const aggResult = applyAggregate(filtered, aggregate as AggregateOp);
+        return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
+      }
+
       const slimmed = applySlimMode(filtered, [...SLIM_FIELDS.address]) as Record<string, unknown>[];
       const { data: truncated, truncated: wasTruncated } = truncateWithWarning(slimmed, MAX_LIST_RESULTS);
 
@@ -241,7 +280,7 @@ export async function handleReadTool(
 
     case "openxe-list-articles": {
       const args = ListArticlesInput.parse(input);
-      const { include_deleted: includeDeletedArt, page: _p, items: _i, ...filterArgs } = args;
+      const { include_deleted: includeDeletedArt, page: _p, items: _i, aggregate: aggArt, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.name_de) apiParams.name_de = filterArgs.name_de;
       if (filterArgs.nummer) apiParams.nummer = filterArgs.nummer;
@@ -253,6 +292,11 @@ export async function handleReadTool(
         slimFields: SLIM_FIELDS.article,
         includeDeleted: includeDeletedArt,
       });
+
+      if (aggArt) {
+        const aggResult = applyAggregate(result.data, aggArt as AggregateOp);
+        return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
+      }
 
       return buildListResponse(result, "Fuer alle Details eines Artikels nutze openxe-get-article mit der ID.");
     }
@@ -272,7 +316,7 @@ export async function handleReadTool(
 
     case "openxe-list-categories": {
       const args = ListCategoriesInput.parse(input);
-      const { include_deleted: includeDeletedCat, page: _p, items: _i, ...filterArgs } = args;
+      const { include_deleted: includeDeletedCat, page: _p, items: _i, aggregate: aggCat, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.bezeichnung) apiParams.bezeichnung = filterArgs.bezeichnung;
       if (filterArgs.parent !== undefined) apiParams.parent = filterArgs.parent;
@@ -283,24 +327,34 @@ export async function handleReadTool(
         includeDeleted: includeDeletedCat,
       });
 
+      if (aggCat) {
+        const aggResult = applyAggregate(result.data, aggCat as AggregateOp);
+        return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
+      }
+
       return buildListResponse(result, "Fuer Details einer Kategorie nutze die jeweilige Kategorie-ID.");
     }
 
     case "openxe-list-shipping-methods": {
       const args = ListShippingMethodsInput.parse(input);
-      const { include_deleted: includeDeletedShip, page: _p, items: _i } = args;
+      const { include_deleted: includeDeletedShip, page: _p, items: _i, aggregate: aggShip } = args;
 
       const result = await fetchFilteredList(client, "/v1/versandarten", {}, {
         slimFields: SLIM_FIELDS.shippingMethod,
         includeDeleted: includeDeletedShip,
       });
 
+      if (aggShip) {
+        const aggResult = applyAggregate(result.data, aggShip as AggregateOp);
+        return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
+      }
+
       return buildListResponse(result, "Versandarten-Liste. Nutze die ID fuer Zuordnungen.");
     }
 
     case "openxe-list-files": {
       const args = ListFilesInput.parse(input);
-      const { include_deleted: includeDeletedFile, page: _p, items: _i, ...filterArgs } = args;
+      const { include_deleted: includeDeletedFile, page: _p, items: _i, aggregate: aggFile, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.objekt) apiParams.objekt = filterArgs.objekt;
       if (filterArgs.parameter) apiParams.parameter = filterArgs.parameter;
@@ -310,6 +364,11 @@ export async function handleReadTool(
         slimFields: SLIM_FIELDS.file,
         includeDeleted: includeDeletedFile,
       });
+
+      if (aggFile) {
+        const aggResult = applyAggregate(result.data, aggFile as AggregateOp);
+        return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
+      }
 
       return buildListResponse(result, "Datei-Liste. Nutze die ID fuer weitere Operationen.");
     }

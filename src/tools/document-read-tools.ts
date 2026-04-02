@@ -2,6 +2,21 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList, FilteredListResult } from "../utils/field-filter.js";
+import { applyAggregate, AggregateOp, parseZeitraum } from "../utils/smart-filters.js";
+
+// --- Aggregate schema ---
+
+const AggregateSchema = z
+  .union([
+    z.literal("count"),
+    z.object({ sum: z.string() }),
+    z.object({ avg: z.string() }),
+    z.object({ min: z.string() }),
+    z.object({ max: z.string() }),
+    z.object({ groupBy: z.string(), count: z.boolean().optional(), sum: z.string().optional() }),
+  ])
+  .optional()
+  .describe("Aggregation: 'count', {sum:'feld'}, {avg:'feld'}, {min:'feld'}, {max:'feld'}, {groupBy:'feld', sum?:'feld'}. Wird STATT der Datenliste zurueckgegeben.");
 
 // --- Shared schemas ---
 
@@ -17,10 +32,17 @@ const ListFilters = z.object({
     .string()
     .optional()
     .describe("Datum bis (YYYY-MM-DD), filtert datum <= Wert"),
+  zeitraum: z
+    .string()
+    .optional()
+    .describe(
+      "Zeitraum-Shortcut: 'heute', 'diese-woche', 'dieser-monat', 'letzter-monat', 'letzte-30-tage', 'oktober-2025', 'Q3-2025', '2025'"
+    ),
   include_deleted: z
     .boolean()
     .optional()
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
+  aggregate: AggregateSchema,
 });
 
 const GetByIdInput = z.object({
@@ -106,7 +128,7 @@ export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = DOC_TYPES.flatMa
   (dt) => [
     {
       name: dt.listName,
-      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Gibt eine kompakte Liste zurueck (nur Schluesselfelder: id, belegnr, status, name, datum, summe). Fuer alle Details eines Eintrags nutze ${dt.getName}. Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte. Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.`,
+      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Gibt eine kompakte Liste zurueck (nur Schluesselfelder: id, belegnr, status, name, datum, summe). Fuer alle Details eines Eintrags nutze ${dt.getName}. Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte, zeitraum (z.B. 'dieser-monat', 'Q3-2025'). Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.`,
       inputSchema: zodToJsonSchema(ListFilters) as Record<string, unknown>,
     },
     {
@@ -158,6 +180,12 @@ export async function handleDocumentReadTool(
   const listPath = LIST_TOOL_PATH[toolName];
   if (listPath) {
     const filters = ListFilters.parse(args);
+    // Resolve zeitraum shortcut into datum_gte / datum_lte
+    if (filters.zeitraum) {
+      const { von, bis } = parseZeitraum(filters.zeitraum);
+      if (!filters.datum_gte) filters.datum_gte = von;
+      if (!filters.datum_lte) filters.datum_lte = bis;
+    }
     const params: Record<string, string> = {};
     if (filters.belegnr) params.belegnr = filters.belegnr;
     if (filters.kundennummer) params.kundennummer = filters.kundennummer;
@@ -170,6 +198,12 @@ export async function handleDocumentReadTool(
       slimFields: [...slimFields],
       includeDeleted: filters.include_deleted,
     });
+
+    // Aggregate: return aggregation result instead of data list
+    if (filters.aggregate) {
+      const aggResult = applyAggregate(result.data, filters.aggregate as AggregateOp);
+      return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
+    }
 
     // Build info string
     let info = `${result.meta.returned} Ergebnisse`;

@@ -97,6 +97,22 @@ export function applyAggregate(records: any[], op: AggregateOp): any {
       }
       return { groupBy: op.groupBy, groups };
     }
+    if ("sum" in op && typeof op.sum === "string") {
+      const total = records.reduce((s, r) => s + (parseFloat(r[op.sum as string]) || 0), 0);
+      return { sum: Math.round(total * 100) / 100, field: op.sum, count: records.length };
+    }
+    if ("avg" in op && typeof op.avg === "string") {
+      const total = records.reduce((s, r) => s + (parseFloat(r[op.avg as string]) || 0), 0);
+      return { avg: records.length ? Math.round((total / records.length) * 100) / 100 : 0, field: op.avg, count: records.length };
+    }
+    if ("min" in op && typeof op.min === "string") {
+      const vals = records.map(r => parseFloat(r[op.min as string]) || 0);
+      return { min: Math.min(...vals), field: op.min };
+    }
+    if ("max" in op && typeof op.max === "string") {
+      const vals = records.map(r => parseFloat(r[op.max as string]) || 0);
+      return { max: Math.max(...vals), field: op.max };
+    }
   }
   return { error: "Unknown aggregate operation" };
 }
