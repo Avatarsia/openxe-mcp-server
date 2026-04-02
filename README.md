@@ -2,7 +2,7 @@
 
 Verbinde dein [OpenXE ERP](https://openxe.de/) mit deinem KI-Assistenten -- per [MCP (Model Context Protocol)](https://modelcontextprotocol.io/).
 
-> **37+ Tools** zum Erstellen und Bearbeiten von ERP-Daten | **19 Resources** zum Lesen von Artikeln, Auftraegen, Rechnungen, Lagerbestaenden u.v.m. | **Verifiziert** gegen eine live OpenXE v1.12 Instanz
+> **47+ Tools** zum Erstellen und Bearbeiten von ERP-Daten | **19 Resources** zum Lesen von Artikeln, Auftraegen, Rechnungen, Lagerbestaenden u.v.m. | **Verifiziert** gegen eine live OpenXE v1.12 Instanz
 
 ## Was ist das?
 
@@ -161,6 +161,8 @@ Sobald der Server laeuft, kannst du deinen KI-Assistenten direkt auf Deutsch ans
 
 Dein KI-Assistent waehlt automatisch die passenden Tools und Resources aus.
 
+**Beschaffungs-Workflow:** Lieferant suchen -> Einkaufspreise pruefen -> Bestellung erstellen -> Freigeben
+
 ## Verfuegbare Funktionen
 
 ### Resources (Lesen)
@@ -184,9 +186,13 @@ Dein KI-Assistent waehlt automatisch die passenden Tools und Resources aus.
 | Tool | Beschreibung |
 |---|---|
 | Belege erstellen | Auftraege, Rechnungen, Lieferscheine, Gutschriften, Angebote, Bestellungen |
-| Belege bearbeiten | Positionen hinzufuegen, Status aendern |
+| Belege bearbeiten | Auftraege, Rechnungen, Angebote, Lieferscheine, Gutschriften nachtraeglich aendern |
 | Adressen | Kunden/Lieferanten anlegen und bearbeiten |
 | Artikel | Artikelstammdaten bearbeiten |
+| Bestellungen | Anlegen, Bearbeiten, Freigeben, Auflisten mit Smart Filters |
+| Einkaufspreise | Staffelpreise und Lieferanten-Konditionen ueber `get-article` mit `includeEinkaufspreise=true` |
+| Erweiterte Felder | waehrung, internebemerkung, versandart, ustid, lieferantennummer bei Erstellung |
+| Dashboard-KPIs | offene-bestellungen, bestellvolumen-monat |
 | Abos | Wiederkehrende Auftraege verwalten |
 | Zeiterfassung | Stechuhr (kommen/gehen/Pause), Zeiteintraege CRUD, Wochen-Uebersicht |
 

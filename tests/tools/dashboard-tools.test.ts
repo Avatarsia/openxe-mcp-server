@@ -52,9 +52,9 @@ describe("Dashboard Tools", () => {
       expect(desc).toContain("Token-effizient");
     });
 
-    it("schema has kpi enum with all 9 KPIs", () => {
+    it("schema has kpi enum with all 11 KPIs", () => {
       const schema = DASHBOARD_TOOL_DEFINITIONS[0].inputSchema as any;
-      expect(schema.properties.kpi.enum).toHaveLength(9);
+      expect(schema.properties.kpi.enum).toHaveLength(11);
       for (const name of KPI_NAMES) {
         expect(schema.properties.kpi.enum).toContain(name);
       }

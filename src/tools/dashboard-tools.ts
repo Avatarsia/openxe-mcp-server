@@ -2,6 +2,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { fetchFilteredList } from "../utils/field-filter.js";
+import { fetchPurchaseOrders } from "../utils/purchase-order-fetch.js";
 
 // --- Types ---
 
@@ -28,6 +29,8 @@ const KPI_NAMES = [
   "auftragseingang-woche",
   "artikel-anzahl",
   "kunden-anzahl",
+  "offene-bestellungen",
+  "bestellvolumen-monat",
 ] as const;
 
 type KpiName = (typeof KPI_NAMES)[number];
@@ -37,7 +40,8 @@ const DashboardInput = z.object({
     .enum(KPI_NAMES)
     .describe(
       "KPI-Name: umsatz-monat, umsatz-jahr, offene-auftraege, offene-rechnungen, " +
-        "ueberfaellige-rechnungen, top-kunde, auftragseingang-woche, artikel-anzahl, kunden-anzahl"
+        "ueberfaellige-rechnungen, top-kunde, auftragseingang-woche, artikel-anzahl, kunden-anzahl, " +
+        "offene-bestellungen, bestellvolumen-monat"
     ),
 });
 
@@ -50,7 +54,8 @@ export const DASHBOARD_TOOL_DEFINITIONS: ToolDefinition[] = [
       "Dashboard-KPI abrufen. Liefert eine einzelne Kennzahl (z.B. Umsatz, offene Auftraege, " +
       "Top-Kunde). Token-effizient: ~30 Tokens pro Antwort. " +
       "Verfuegbare KPIs: umsatz-monat, umsatz-jahr, offene-auftraege, offene-rechnungen, " +
-      "ueberfaellige-rechnungen, top-kunde, auftragseingang-woche, artikel-anzahl, kunden-anzahl.",
+      "ueberfaellige-rechnungen, top-kunde, auftragseingang-woche, artikel-anzahl, kunden-anzahl, " +
+      "offene-bestellungen, bestellvolumen-monat.",
     inputSchema: zodToJsonSchema(DashboardInput) as Record<string, unknown>,
   },
 ];
@@ -277,6 +282,49 @@ async function kpiKundenAnzahl(client: OpenXEClient): Promise<Record<string, unk
   };
 }
 
+// --- Procurement KPIs ---
+// NOTE: Bestellungen (purchase orders) use the Legacy API, not REST v1.
+// We try BelegeList first (efficient), then fall back to iterative BestellungGet.
+
+async function fetchPurchaseOrdersForKpi(client: OpenXEClient): Promise<any[]> {
+  return fetchPurchaseOrders(client);
+}
+
+async function kpiOffeneBestellungen(client: OpenXEClient): Promise<Record<string, unknown>> {
+  const data = await fetchPurchaseOrdersForKpi(client);
+  const aktiv = data.filter((r: any) =>
+    ["offen", "freigegeben", "bestellt", "angemahnt"].includes(String(r.status || "").toLowerCase())
+  );
+  const summe = round2(sumField(aktiv, "gesamtsumme"));
+  return {
+    kpi: "offene-bestellungen",
+    anzahl: aktiv.length,
+    gesamtsumme: summe,
+    waehrung: "EUR",
+    status_verteilung: {
+      offen: aktiv.filter((r: any) => r.status === "offen").length,
+      freigegeben: aktiv.filter((r: any) => r.status === "freigegeben").length,
+      bestellt: aktiv.filter((r: any) => r.status === "bestellt").length,
+      angemahnt: aktiv.filter((r: any) => r.status === "angemahnt").length,
+    },
+  };
+}
+
+async function kpiBestellvolumenMonat(client: OpenXEClient, now: Date): Promise<Record<string, unknown>> {
+  const data = await fetchPurchaseOrdersForKpi(client);
+  const mStart = monthStart(now);
+  const tDay = today(now);
+  const monat = data.filter((r: any) => r.datum && r.datum >= mStart && r.datum <= tDay);
+  const summe = round2(sumField(monat, "gesamtsumme"));
+  return {
+    kpi: "bestellvolumen-monat",
+    wert: summe,
+    waehrung: "EUR",
+    zeitraum: monthLabel(now),
+    basis: monat.length + " Bestellungen",
+  };
+}
+
 // --- Dispatcher ---
 
 const KPI_HANDLERS: Record<KpiName, (client: OpenXEClient, now: Date) => Promise<Record<string, unknown>>> = {
@@ -289,6 +337,8 @@ const KPI_HANDLERS: Record<KpiName, (client: OpenXEClient, now: Date) => Promise
   "auftragseingang-woche": kpiAuftragseingangWoche,
   "artikel-anzahl": (client) => kpiArtikelAnzahl(client),
   "kunden-anzahl": (client) => kpiKundenAnzahl(client),
+  "offene-bestellungen": (client) => kpiOffeneBestellungen(client),
+  "bestellvolumen-monat": kpiBestellvolumenMonat,
 };
 
 export async function handleDashboardTool(

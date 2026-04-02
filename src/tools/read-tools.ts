@@ -96,6 +96,12 @@ const GetArticleInput = z.object({
     .describe(
       "Comma-separated includes: verkaufspreise, lagerbestand, dateien, projekt"
     ),
+  includeEinkaufspreise: z
+    .boolean()
+    .optional()
+    .describe(
+      "Include purchase prices (Einkaufspreise) — fetched via Legacy API since REST v1 doesn't support this include"
+    ),
 });
 
 const ListCategoriesInput = z.object({
@@ -183,13 +189,13 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-list-articles",
     description:
-      "Liste aller Artikel (GET /v1/artikel). Gibt eine kompakte Liste zurueck (nur Schluesselfelder). Fuer alle Details eines Artikels nutze openxe-get-article. Optionale Filter: name_de, nummer, typ, projekt. Include: verkaufspreise, lagerbestand, dateien, projekt. HINWEIS: Preise nur mit include=verkaufspreise sichtbar. Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.",
+      "Liste aller Artikel (GET /v1/artikel). Gibt eine kompakte Liste zurueck (nur Schluesselfelder). Fuer alle Details eines Artikels nutze openxe-get-article. Optionale Filter: name_de, nummer, typ, projekt. Include: verkaufspreise, lagerbestand, dateien, projekt. HINWEIS: Preise nur mit include=verkaufspreise sichtbar. Einkaufspreise sind nur ueber openxe-get-article (Einzelartikel) mit includeEinkaufspreise=true verfuegbar. Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.",
     inputSchema: zodToJsonSchema(ListArticlesInput) as Record<string, unknown>,
   },
   {
     name: "openxe-get-article",
     description:
-      "Einzelnen Artikel abrufen (GET /v1/artikel/{id}). Gibt ALLE Felder eines einzelnen Datensatzes zurueck. Include: verkaufspreise, lagerbestand, dateien, projekt.",
+      "Einzelnen Artikel abrufen (GET /v1/artikel/{id}). Gibt ALLE Felder eines einzelnen Datensatzes zurueck. Include: verkaufspreise, lagerbestand, dateien, projekt. Mit includeEinkaufspreise=true werden Einkaufspreise (Staffelpreise, Lieferanten) via Legacy API ergaenzt.",
     inputSchema: zodToJsonSchema(GetArticleInput) as Record<string, unknown>,
   },
   {
@@ -387,14 +393,29 @@ export async function handleReadTool(
     }
 
     case "openxe-get-article": {
-      const { id, include } = GetArticleInput.parse(input);
+      const { id, include, includeEinkaufspreise } = GetArticleInput.parse(input);
       const apiParams: Record<string, string | number | undefined> = {};
       if (include) apiParams.include = include;
 
       const result = await client.get(`/v1/artikel/${id}`, apiParams);
+      const data = result.data;
+
+      if (includeEinkaufspreise) {
+        const legacyResult = await client.legacyPost("ArtikelGet", { id });
+        const legacyData = legacyResult.data as any;
+        if (legacyData?.einkaufspreise) {
+          const ek = legacyData.einkaufspreise;
+          // Normalize staffelpreis to always be an array
+          if (ek.staffelpreis && !Array.isArray(ek.staffelpreis)) {
+            ek.staffelpreis = [ek.staffelpreis];
+          }
+          (data as any).einkaufspreise = ek;
+        }
+      }
+
       return {
         content: [
-          { type: "text", text: JSON.stringify(result.data, null, 2) },
+          { type: "text", text: JSON.stringify(data, null, 2) },
         ],
       };
     }

@@ -51,6 +51,11 @@ export const AddressCreateInput = z.object({
   telefon: z.string().optional().describe("Phone number"),
   kundennummer: z.string().default("NEU").describe("Customer number. Default 'NEU' = system auto-generates the next number."),
   projekt: z.number().int().optional().describe("Project ID"),
+  lieferantennummer: z.string().optional().describe("Supplier number — use 'NEU' for auto-generate, or leave empty for non-suppliers"),
+  ustid: z.string().optional().describe("VAT ID (Umsatzsteuer-ID)"),
+  rolle: z.string().optional().describe("Role: Kunde, Lieferant, or both"),
+  waehrung: z.string().optional().describe("Default currency"),
+  sprache: z.string().optional().describe("Language (e.g. deutsch, englisch)"),
 });
 
 export const AddressEditInput = z.object({

@@ -69,6 +69,10 @@ import {
   DASHBOARD_TOOL_DEFINITIONS,
   handleDashboardTool,
 } from "./tools/dashboard-tools.js";
+import {
+  PROCUREMENT_TOOL_DEFINITIONS,
+  handleProcurementTool,
+} from "./tools/procurement-tools.js";
 
 async function main() {
   const config = loadConfig();
@@ -111,6 +115,10 @@ async function main() {
         "- Auftrag zu Rechnung: action=convert-to-invoice mit {id: AUFTRAGS_ID}",
         '- PDF abrufen: action=get-document-pdf mit {typ: "rechnung", id: ID}',
         "",
+        "## Belege bearbeiten",
+        "- edit-order / edit-invoice / edit-quote / edit-delivery-note / edit-credit-memo: Header-Felder nachtraeglich aendern (Positionen koennen nach Erstellung nicht geaendert werden)",
+        "- Editierbare Felder: datum, zahlungsweise, versandart, freitext, internebezeichnung, lieferbedingung, projekt",
+        "",
         "## Zeiterfassung",
         "- Einstempeln: action=clock-action, params={cmd: \"kommen\", adresse: MITARBEITER_ID}",
         "- Ausstempeln: action=clock-action, params={cmd: \"gehen\", adresse: MITARBEITER_ID}",
@@ -119,13 +127,28 @@ async function main() {
         "",
         "## Dashboard (Token-sparend)",
         "- Fuer Kennzahlen nutze action=dashboard mit kpi=:",
-        '  "umsatz-monat", "offene-auftraege", "offene-rechnungen", "top-kunde", "kunden-anzahl"',
+        '  "umsatz-monat", "offene-auftraege", "offene-rechnungen", "top-kunde", "kunden-anzahl",',
+        '  "offene-bestellungen", "bestellvolumen-monat"',
         "- Das spart Tokens gegenueber dem Laden ganzer Listen.",
+        "",
+        "## Beschaffung (Einkauf)",
+        "- list-purchase-orders: Bestellungen auflisten (Status: offen -> freigegeben -> bestellt -> angemahnt -> empfangen)",
+        "- get-purchase-order: Einzelbestellung mit Positionen",
+        "- create-purchase-order: adresse (Lieferant-ID), positionen [{nummer, menge, preis}]",
+        "- Bestellung editieren: edit-purchase-order (lieferdatum, einkaeufer, versandart, projekt)",
+        "- release-purchase-order: Bestellung freigeben",
+        "- get-article mit includeEinkaufspreise=true: Zeigt Einkaufspreise/Staffelpreise vom Lieferanten",
+        "- Lieferanten finden: list-addresses mit where=lieferantennummer_notEmpty",
+        "- Lieferanten anlegen: create-address mit lieferantennummer='NEU', rolle='Lieferant', ustid",
         "",
         "## Business Queries (vordefiniert)",
         '- action=business-query, params={preset: "nicht-versendet"} — offene Auftraege',
         '- action=business-query, params={preset: "offene-rechnungen"} — unbezahlte Rechnungen',
         '- action=business-query, params={preset: "ueberfaellige-rechnungen"} — >30 Tage ueberfaellig',
+        "",
+        "## Adressen",
+        "- Kunde anlegen: create-address mit kundennummer='NEU' (System vergibt automatisch)",
+        "- Lieferant anlegen: create-address mit rolle='Lieferant', lieferantennummer='NEU', ustid",
         "",
         "## Wichtige Regeln",
         "- Geloeschte Datensaetze (DEL) werden automatisch ausgeblendet.",
@@ -263,6 +286,7 @@ async function main() {
     ...TIME_TOOL_DEFINITIONS,
     ...READ_TOOL_DEFINITIONS,
     ...DASHBOARD_TOOL_DEFINITIONS,
+    ...PROCUREMENT_TOOL_DEFINITIONS,
     BUSINESS_QUERY_TOOL_DEFINITION,
     BATCH_PDF_TOOL_DEFINITION,
   ];
@@ -302,6 +326,9 @@ async function main() {
   const readToolNames = new Set(
     READ_TOOL_DEFINITIONS.map((t) => t.name)
   );
+  const procurementToolNames = new Set(
+    PROCUREMENT_TOOL_DEFINITIONS.map((t: { name: string }) => t.name)
+  );
 
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ServerResult> => {
     const { name, arguments: args } = request.params;
@@ -336,6 +363,9 @@ async function main() {
     }
     if (dashboardToolNames.has(name)) {
       return handleDashboardTool(name, toolArgs, client) as Promise<ServerResult>;
+    }
+    if (procurementToolNames.has(name)) {
+      return handleProcurementTool(name, toolArgs, client) as Promise<ServerResult>;
     }
     if (name === "openxe-business-query") {
       return handleBusinessQueryTool(toolArgs, client) as Promise<ServerResult>;

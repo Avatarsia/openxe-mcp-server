@@ -25,7 +25,13 @@ describe("Document Tools", () => {
     expect(names).toContain("openxe-convert-quote-to-order");
     expect(names).toContain("openxe-get-document-pdf");
     expect(names).toContain("openxe-delete-draft-invoice");
-    expect(names).toHaveLength(11);
+    // Edit tools (5 document edit tools)
+    expect(names).toContain("openxe-edit-order");
+    expect(names).toContain("openxe-edit-invoice");
+    expect(names).toContain("openxe-edit-quote");
+    expect(names).toContain("openxe-edit-delivery-note");
+    expect(names).toContain("openxe-edit-credit-memo");
+    expect(names).toHaveLength(16);
   });
 
   it("creates order via Legacy API AuftragCreate", async () => {

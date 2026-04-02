@@ -163,6 +163,22 @@ export const BUSINESS_PRESETS: Record<string, {
     defaultFields: ["id", "name", "datum", "soll", "status"],
     description: "Nicht freigegebene Rechnungsentwuerfe"
   },
+  "offene-bestellungen": {
+    entity: "purchaseOrders",
+    filter: records => records.filter(r => ["offen", "freigegeben", "bestellt", "angemahnt"].includes(r.status)),
+    defaultFields: ["id", "belegnr", "name", "lieferantennummer", "datum", "lieferdatum", "gesamtsumme", "status"],
+    description: "Nicht abgeschlossene Bestellungen"
+  },
+  "ueberfaellige-lieferungen": {
+    entity: "purchaseOrders",
+    filter: records => records.filter(r => {
+      if (r.status !== "bestellt") return false;
+      if (!r.lieferdatum) return false;
+      return new Date(r.lieferdatum) < new Date();
+    }),
+    defaultFields: ["id", "belegnr", "name", "lieferantennummer", "datum", "lieferdatum", "gesamtsumme", "status"],
+    description: "Bestellungen mit ueberschrittenem Lieferdatum"
+  },
 };
 
 // --- Output format helpers ---
@@ -316,6 +332,14 @@ export const STATUS_PRESETS: Record<string, Record<string, (record: any) => bool
     offen: (r) => r.status === "freigegeben" || r.status === "angelegt",
     angenommen: (r) => r.status === "beauftragt",
     abgelehnt: (r) => r.status === "abgelehnt",
+  },
+  purchaseOrders: {
+    offen: (r) => r.status === "offen",
+    freigegeben: (r) => r.status === "freigegeben",
+    bestellt: (r) => r.status === "bestellt",
+    angemahnt: (r) => r.status === "angemahnt",
+    empfangen: (r) => r.status === "empfangen",
+    aktiv: (r) => ["offen", "freigegeben", "bestellt", "angemahnt"].includes(r.status),
   },
 };
 

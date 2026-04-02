@@ -10,6 +10,7 @@ import { handleTimeTool } from "./time-tools.js";
 import { handleBusinessQueryTool } from "./business-query-tools.js";
 import { handleBatchPDFTool } from "./batch-pdf-tools.js";
 import { handleDashboardTool } from "./dashboard-tools.js";
+import { handleProcurementTool } from "./procurement-tools.js";
 import { BUSINESS_PRESETS } from "../utils/smart-filters.js";
 
 // --- Types ---
@@ -27,13 +28,13 @@ interface ToolResult {
 
 // --- Action Registry ---
 
-type Category = "stammdaten" | "belege" | "business" | "shop" | "zeiterfassung" | "system" | "dashboard";
+type Category = "stammdaten" | "belege" | "beschaffung" | "business" | "shop" | "zeiterfassung" | "system" | "dashboard";
 
 interface ActionEntry {
   action: string;
   label: string;
   category: Category;
-  handler: "read" | "document-read" | "document" | "address" | "subscription" | "time" | "business-query" | "batch-pdf" | "dashboard";
+  handler: "read" | "document-read" | "document" | "address" | "subscription" | "time" | "business-query" | "batch-pdf" | "dashboard" | "procurement";
   toolName: string; // original openxe-* tool name
 }
 
@@ -42,7 +43,7 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "list-addresses", label: "Kunden/Adressen auflisten [+Smart Filter] (Filter: kundennummer, name, land)", category: "stammdaten", handler: "read", toolName: "openxe-list-addresses" },
   { action: "get-address", label: "Adresse nach ID abrufen (alle Details)", category: "stammdaten", handler: "read", toolName: "openxe-get-address" },
   { action: "list-articles", label: "Artikel auflisten [+Smart Filter] (Filter: nummer, name_de; Include: verkaufspreise, lagerbestand)", category: "stammdaten", handler: "read", toolName: "openxe-list-articles" },
-  { action: "get-article", label: "Artikel nach ID (alle Details + Preise + Lager)", category: "stammdaten", handler: "read", toolName: "openxe-get-article" },
+  { action: "get-article", label: "Artikel nach ID (alle Details + Preise + Lager + Einkaufspreise via includeEinkaufspreise)", category: "stammdaten", handler: "read", toolName: "openxe-get-article" },
   { action: "create-address", label: "Neuen Kunden anlegen (kundennummer=NEU fuer Autovergabe)", category: "stammdaten", handler: "address", toolName: "openxe-create-address" },
   { action: "edit-address", label: "Adresse bearbeiten", category: "stammdaten", handler: "address", toolName: "openxe-edit-address" },
   { action: "create-delivery-address", label: "Lieferadresse anlegen", category: "stammdaten", handler: "address", toolName: "openxe-create-delivery-address" },
@@ -67,6 +68,11 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "create-quote", label: "Neues Angebot erstellen", category: "belege", handler: "document", toolName: "openxe-create-quote" },
   { action: "create-invoice", label: "Neue Rechnung erstellen", category: "belege", handler: "document", toolName: "openxe-create-invoice" },
   { action: "create-credit-note", label: "Gutschrift erstellen", category: "belege", handler: "document", toolName: "openxe-create-credit-note" },
+  { action: "edit-order", label: "Auftrag bearbeiten (Header-Felder: id, lieferdatum, versandart, zahlungsweise, freitext, internebezeichnung)", category: "belege", handler: "document", toolName: "openxe-edit-order" },
+  { action: "edit-invoice", label: "Rechnung bearbeiten (id, zahlungsweise, zahlungszieltage, freitext, internebezeichnung)", category: "belege", handler: "document", toolName: "openxe-edit-invoice" },
+  { action: "edit-quote", label: "Angebot bearbeiten (id, gueltigbis, zahlungsweise, freitext, internebezeichnung, lieferbedingung)", category: "belege", handler: "document", toolName: "openxe-edit-quote" },
+  { action: "edit-delivery-note", label: "Lieferschein bearbeiten (id, versandart, freitext, internebezeichnung)", category: "belege", handler: "document", toolName: "openxe-edit-delivery-note" },
+  { action: "edit-credit-memo", label: "Gutschrift bearbeiten (id, zahlungsweise, freitext, internebezeichnung)", category: "belege", handler: "document", toolName: "openxe-edit-credit-memo" },
   { action: "convert-quote-to-order", label: "Angebot zu Auftrag weiterfuehren", category: "belege", handler: "document", toolName: "openxe-convert-quote-to-order" },
   { action: "convert-to-invoice", label: "Auftrag zu Rechnung weiterfuehren", category: "belege", handler: "document", toolName: "openxe-convert-order-to-invoice" },
   { action: "release-order", label: "Auftrag freigeben", category: "belege", handler: "document", toolName: "openxe-release-order" },
@@ -75,6 +81,13 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "delete-draft-invoice", label: "Entwurfs-Rechnung loeschen", category: "belege", handler: "document", toolName: "openxe-delete-draft-invoice" },
   { action: "get-document-pdf", label: "PDF eines Belegs abrufen (typ + id)", category: "belege", handler: "document", toolName: "openxe-get-document-pdf" },
   { action: "batch-pdf", label: "Mehrere Beleg-PDFs herunterladen (max 20, Filter: ids/status/zeitraum/where)", category: "belege", handler: "batch-pdf", toolName: "openxe-batch-pdf" },
+
+  // === Beschaffung (Einkauf) ===
+  { action: "list-purchase-orders", label: "Bestellungen auflisten [+Smart Filter] (Filter: status, belegnr, lieferantennummer, name, zeitraum)", category: "beschaffung", handler: "procurement", toolName: "openxe-list-purchase-orders" },
+  { action: "get-purchase-order", label: "Einzelne Bestellung mit Positionen abrufen", category: "beschaffung", handler: "procurement", toolName: "openxe-get-purchase-order" },
+  { action: "create-purchase-order", label: "Neue Bestellung anlegen (adresse, positionen [{nummer, menge, preis}], lieferdatum, einkaeufer)", category: "beschaffung", handler: "procurement", toolName: "openxe-create-purchase-order" },
+  { action: "edit-purchase-order", label: "Bestellung bearbeiten (id, lieferdatum, einkaeufer, versandart, ...)", category: "beschaffung", handler: "procurement", toolName: "openxe-edit-purchase-order" },
+  { action: "release-purchase-order", label: "Bestellung freigeben", category: "beschaffung", handler: "procurement", toolName: "openxe-release-purchase-order" },
 
   // === Shop / Sonstiges ===
   { action: "create-subscription", label: "Abo-Artikel anlegen", category: "shop", handler: "subscription", toolName: "openxe-create-subscription" },
@@ -107,7 +120,7 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "server-time", label: "Serverzeit abrufen", category: "system", handler: "subscription", toolName: "openxe-server-time" },
 
   // === Dashboard ===
-  { action: "dashboard", label: "KPI abrufen (umsatz-monat, umsatz-jahr, offene-auftraege, offene-rechnungen, ueberfaellige-rechnungen, top-kunde, auftragseingang-woche, artikel-anzahl, kunden-anzahl)", category: "dashboard", handler: "dashboard", toolName: "openxe-dashboard" },
+  { action: "dashboard", label: "KPI abrufen (umsatz-monat, umsatz-jahr, offene-auftraege, offene-rechnungen, ueberfaellige-rechnungen, top-kunde, auftragseingang-woche, artikel-anzahl, kunden-anzahl, offene-bestellungen, bestellvolumen-monat)", category: "dashboard", handler: "dashboard", toolName: "openxe-dashboard" },
 ];
 
 // Build lookup map
@@ -120,7 +133,7 @@ for (const entry of ACTION_REGISTRY) {
 
 const DiscoverInput = z.object({
   category: z
-    .enum(["stammdaten", "belege", "business", "shop", "zeiterfassung", "system", "dashboard", "alle"])
+    .enum(["stammdaten", "belege", "beschaffung", "business", "shop", "zeiterfassung", "system", "dashboard", "alle"])
     .optional()
     .default("alle")
     .describe("Kategorie-Filter (default: alle)"),
@@ -129,13 +142,14 @@ const DiscoverInput = z.object({
 export const DISCOVER_TOOL_DEFINITION: ToolDefinition = {
   name: "openxe-discover",
   description:
-    "Zeigt alle verfuegbaren OpenXE-Aktionen. IMMER ZUERST AUFRUFEN wenn du nicht weisst welche Aktionen es gibt. Optional: category='stammdaten'/'belege'/'zeiterfassung'/'dashboard'/'alle'",
+    "Zeigt alle verfuegbaren OpenXE-Aktionen. IMMER ZUERST AUFRUFEN wenn du nicht weisst welche Aktionen es gibt. Optional: category='stammdaten'/'belege'/'beschaffung'/'zeiterfassung'/'dashboard'/'alle'",
   inputSchema: zodToJsonSchema(DiscoverInput) as Record<string, unknown>,
 };
 
 const CATEGORY_LABELS: Record<Category, string> = {
   stammdaten: "Stammdaten",
   belege: "Belege",
+  beschaffung: "Beschaffung (Einkauf)",
   business: "Business Queries",
   shop: "Shop / CRM / Sonstiges",
   zeiterfassung: "Zeiterfassung",
@@ -143,7 +157,7 @@ const CATEGORY_LABELS: Record<Category, string> = {
   dashboard: "Dashboard",
 };
 
-const CATEGORY_ORDER: Category[] = ["stammdaten", "belege", "business", "shop", "zeiterfassung", "system", "dashboard"];
+const CATEGORY_ORDER: Category[] = ["stammdaten", "belege", "beschaffung", "business", "shop", "zeiterfassung", "system", "dashboard"];
 
 export function handleDiscover(args: Record<string, unknown>): ToolResult {
   const { category } = DiscoverInput.parse(args);
@@ -152,7 +166,7 @@ export function handleDiscover(args: Record<string, unknown>): ToolResult {
   const lines: string[] = [];
 
   // Smart Filter documentation (shown at top for "alle" or when list categories are included)
-  if (category === "alle" || ["stammdaten", "belege"].includes(category as string)) {
+  if (category === "alle" || ["stammdaten", "belege", "beschaffung"].includes(category as string)) {
     lines.push("=== Smart Filter (verfuegbar auf allen list-* Aktionen) ===");
     lines.push('where         Client-seitige Filter: {plz: {startsWith: "2"}}, {email: {empty: true}}, {name: {contains: "Mueller"}}');
     lines.push("              Operatoren: equals, contains, startsWith, endsWith, gt, lt, gte, lte, range, empty, notEmpty");
@@ -255,6 +269,8 @@ export async function handleRouter(
       return handleBatchPDFTool(entry.toolName, params, client);
     case "dashboard":
       return handleDashboardTool(entry.toolName, params, client);
+    case "procurement":
+      return handleProcurementTool(entry.toolName, params, client);
     default:
       return {
         content: [{ type: "text", text: `Internal error: unknown handler "${entry.handler}"` }],

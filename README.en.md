@@ -4,11 +4,16 @@ An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that 
 
 ## Features
 
-- **30+ MCP tools** for creating and editing ERP records (documents, addresses, subscriptions)
+- **47+ MCP tools** for creating and editing ERP records (documents, addresses, procurement, subscriptions)
 - **19 MCP resources** for reading articles, orders, invoices, stock levels, and more
+- **Document editing:** Modify orders, invoices, quotes, delivery notes, credit memos after creation
+- **Expanded schemas:** waehrung, internebemerkung, versandart, ustid, lieferantennummer fields on creation
+- **Procurement tools:** Purchase orders (create, edit, release, list with smart filters), purchase prices via `get-article` with `includeEinkaufspreise=true`, dashboard KPIs (open orders, monthly order volume)
 - **HTTP Digest Auth** compatible with OpenXE's Xentral-API realm
 - **Verified** against a live OpenXE v1.12 instance
 - **73 unit tests** with Vitest
+
+**Procurement workflow:** Find supplier -> Check purchase prices -> Create purchase order -> Release
 
 ## Requirements
 

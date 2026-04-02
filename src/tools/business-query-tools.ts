@@ -2,6 +2,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { fetchFilteredList } from "../utils/field-filter.js";
+import { fetchPurchaseOrders } from "../utils/purchase-order-fetch.js";
 import { BUSINESS_PRESETS, pickFields } from "../utils/smart-filters.js";
 
 // --- Entity to API path mapping ---
@@ -12,6 +13,9 @@ const ENTITY_API_PATH: Record<string, string> = {
   "delivery-notes": "/v1/belege/lieferscheine",
   "quotes": "/v1/belege/angebote",
   "credit-memos": "/v1/belege/gutschriften",
+  // NOTE: purchaseOrders use the Legacy API, not REST v1. The path below is a
+  // Legacy API action marker — handled specially in the handler below.
+  "purchaseOrders": "__legacy__/bestellungen",
 };
 
 // --- Types ---
@@ -90,9 +94,17 @@ export async function handleBusinessQueryTool(
   }
 
   // Fetch all records for this entity (no server-side filter -- preset applies client-side)
-  const result = await fetchFilteredList(client, apiPath, {}, {
-    maxResults: 200, // higher limit for business queries
-  });
+  // Legacy API entities (purchaseOrders) need special handling
+  let result: { data: any[]; meta: { total_from_api: number; filtered_out: number } };
+  if (apiPath.startsWith("__legacy__/")) {
+    // Purchase orders use Legacy API — shared helper with BelegeList + BestellungGet fallback
+    const data = await fetchPurchaseOrders(client);
+    result = { data, meta: { total_from_api: data.length, filtered_out: 0 } };
+  } else {
+    result = await fetchFilteredList(client, apiPath, {}, {
+      maxResults: 200, // higher limit for business queries
+    });
+  }
 
   // Apply the preset's filter
   const filtered = preset.filter(result.data);

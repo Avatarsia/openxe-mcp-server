@@ -128,6 +128,7 @@ export const SLIM_FIELDS = {
   quote: ["id", "belegnr", "status", "name", "kundennummer", "datum", "gesamtsumme", "waehrung"],
   deliveryNote: ["id", "belegnr", "status", "name", "kundennummer", "datum", "versandart"],
   creditMemo: ["id", "belegnr", "status", "name", "kundennummer", "datum", "soll", "ist", "waehrung"],
+  purchaseOrder: ["id", "belegnr", "status", "name", "lieferantennummer", "datum", "lieferdatum", "gesamtsumme", "waehrung", "einkaeufer"],
   category: ["id", "bezeichnung", "parent", "projekt"],
   shippingMethod: ["id", "bezeichnung", "type", "aktiv"],
   file: ["id", "titel", "dateiname", "datum", "size"],

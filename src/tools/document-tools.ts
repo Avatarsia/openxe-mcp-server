@@ -8,6 +8,11 @@ import {
   CreditNoteCreateInput,
   DocumentIdInput,
   BelegPDFInput,
+  EditOrderInput,
+  EditInvoiceInput,
+  EditQuoteInput,
+  EditDeliveryNoteInput,
+  EditCreditMemoInput,
 } from "../schemas/document.js";
 
 interface ToolDefinition {
@@ -87,6 +92,44 @@ export const DOCUMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
     inputSchema: zodToJsonSchema(DocumentIdInput) as Record<string, unknown>,
   },
 
+  // === Edit ===
+  {
+    name: "openxe-edit-order",
+    description:
+      "Auftrag bearbeiten via Legacy API (AuftragEdit). Aendert Kopffelder — Positionen koennen nach Erstellung nicht geaendert werden. Required: id. Optional: datum, projekt, zahlungsweise, lieferbedingung, freitext, internebezeichnung, versandart, lieferdatum.",
+    inputSchema: zodToJsonSchema(EditOrderInput) as Record<string, unknown>,
+  },
+  {
+    name: "openxe-edit-invoice",
+    description:
+      "Rechnung bearbeiten via Legacy API (RechnungEdit). Aendert Kopffelder — Positionen koennen nach Erstellung nicht geaendert werden. Required: id. Optional: datum, projekt, zahlungsweise, zahlungszieltage, freitext, internebezeichnung.",
+    inputSchema: zodToJsonSchema(EditInvoiceInput) as Record<string, unknown>,
+  },
+  {
+    name: "openxe-edit-quote",
+    description:
+      "Angebot bearbeiten via Legacy API (AngebotEdit). Aendert Kopffelder — Positionen koennen nach Erstellung nicht geaendert werden. Required: id. Optional: datum, gueltigbis, projekt, zahlungsweise, lieferbedingung, freitext, internebezeichnung.",
+    inputSchema: zodToJsonSchema(EditQuoteInput) as Record<string, unknown>,
+  },
+  {
+    name: "openxe-edit-delivery-note",
+    description:
+      "Lieferschein bearbeiten via Legacy API (LieferscheinEdit). Aendert Kopffelder — Positionen koennen nach Erstellung nicht geaendert werden. Required: id. Optional: datum, projekt, versandart, freitext, internebezeichnung.",
+    inputSchema: zodToJsonSchema(EditDeliveryNoteInput) as Record<
+      string,
+      unknown
+    >,
+  },
+  {
+    name: "openxe-edit-credit-memo",
+    description:
+      "Gutschrift bearbeiten via Legacy API (GutschriftEdit). Aendert Kopffelder — Positionen koennen nach Erstellung nicht geaendert werden. Required: id. Optional: datum, projekt, zahlungsweise, freitext, internebezeichnung.",
+    inputSchema: zodToJsonSchema(EditCreditMemoInput) as Record<
+      string,
+      unknown
+    >,
+  },
+
   // === PDF ===
   {
     name: "openxe-get-document-pdf",
@@ -106,6 +149,11 @@ const LEGACY_ACTION_MAP: Record<string, string> = {
   "openxe-release-order": "AuftragFreigabe",
   "openxe-release-invoice": "RechnungFreigabe",
   "openxe-mark-invoice-paid": "RechnungAlsBezahltMarkieren",
+  "openxe-edit-order": "AuftragEdit",
+  "openxe-edit-invoice": "RechnungEdit",
+  "openxe-edit-quote": "AngebotEdit",
+  "openxe-edit-delivery-note": "LieferscheinEdit",
+  "openxe-edit-credit-memo": "GutschriftEdit",
 };
 
 /**
@@ -124,6 +172,11 @@ const LEGACY_WRAPPER_KEY: Record<string, string | null> = {
   "openxe-release-order": null,
   "openxe-release-invoice": null,
   "openxe-mark-invoice-paid": null,
+  "openxe-edit-order": "auftrag",
+  "openxe-edit-invoice": "rechnung",
+  "openxe-edit-quote": "angebot",
+  "openxe-edit-delivery-note": "lieferschein",
+  "openxe-edit-credit-memo": "gutschrift",
 };
 
 const SCHEMA_MAP: Record<string, z.ZodSchema> = {
@@ -136,6 +189,11 @@ const SCHEMA_MAP: Record<string, z.ZodSchema> = {
   "openxe-release-order": DocumentIdInput,
   "openxe-release-invoice": DocumentIdInput,
   "openxe-mark-invoice-paid": DocumentIdInput,
+  "openxe-edit-order": EditOrderInput,
+  "openxe-edit-invoice": EditInvoiceInput,
+  "openxe-edit-quote": EditQuoteInput,
+  "openxe-edit-delivery-note": EditDeliveryNoteInput,
+  "openxe-edit-credit-memo": EditCreditMemoInput,
 };
 
 export async function handleDocumentTool(

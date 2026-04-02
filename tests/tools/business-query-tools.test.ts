@@ -52,7 +52,7 @@ describe("Business Query Tools", () => {
       expect(keys).toContain("offene-rechnungen");
       expect(keys).toContain("ueberfaellige-rechnungen");
       expect(keys).toContain("entwuerfe");
-      expect(keys).toHaveLength(5);
+      expect(keys).toHaveLength(7);
     });
 
     it("each preset has required fields", () => {
