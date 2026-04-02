@@ -258,7 +258,9 @@ export async function handleReadTool(
       if (serverParams.kundennummer) apiParams.kundennummer = serverParams.kundennummer;
 
       const result = await fetchFilteredList(client, "/v1/adressen", apiParams, {
+        slimFields: SLIM_FIELDS.address,
         includeDeleted: include_deleted,
+        skipSlim: !!(where || fields || nameFilter || email || land),
       });
 
       // Client-side filters (name, email, land)
@@ -304,7 +306,7 @@ export async function handleReadTool(
       // 6. applyFields OR applySlimMode (fields overrides slim)
       if (fields && fields.length > 0) {
         data = applyFields(data, fields);
-      } else {
+      } else if (where || nameFilter || email || land) {
         data = applySlimMode(data, [...SLIM_FIELDS.address]) as any[];
       }
       // 7. truncateWithWarning (only if no explicit limit was set)
