@@ -80,6 +80,40 @@ export const AddressCreateInput = z.object({
   versandart: z.string().optional().describe("Default shipping method"),
   steuernummer: z.string().optional().describe("Tax number (Steuernummer)"),
   sonstiges: z.string().optional().describe("Notes / additional info"),
+
+  // Document delivery — per-document-type email overrides (replaces main email for that doc type)
+  angebot_email: z.string().optional().describe("Override email for quotes (Angebote)"),
+  auftrag_email: z.string().optional().describe("Override email for orders (Auftraege)"),
+  rechnungs_email: z.string().optional().describe("Override email for invoices (Rechnungen)"),
+  gutschrift_email: z.string().optional().describe("Override email for credit memos (Gutschriften)"),
+  lieferschein_email: z.string().optional().describe("Override email for delivery notes (Lieferscheine)"),
+  bestellung_email: z.string().optional().describe("Override email for purchase orders (Bestellungen)"),
+
+  // Document delivery — CC emails (additional copy sent alongside main email)
+  angebot_cc: z.string().optional().describe("CC email for quotes"),
+  auftrag_cc: z.string().optional().describe("CC email for orders"),
+  rechnung_cc: z.string().optional().describe("CC email for invoices"),
+  gutschrift_cc: z.string().optional().describe("CC email for credit memos"),
+  lieferschein_cc: z.string().optional().describe("CC email for delivery notes"),
+  bestellung_cc: z.string().optional().describe("CC email for purchase orders"),
+
+  // Invoice delivery mode
+  rechnung_permail: z.number().optional().describe("Force invoices via email (1=yes)"),
+  rechnung_papier: z.number().optional().describe("Also print paper copy of invoices (1=yes)"),
+  rechnung_anzahlpapier: z.number().optional().describe("Number of paper copies for invoices"),
+
+  // Alternative invoice address
+  abweichende_rechnungsadresse: z.number().optional().describe("Use alternative invoice address (1=yes)"),
+  rechnung_name: z.string().optional().describe("Alt. invoice address: company/name"),
+  rechnung_strasse: z.string().optional().describe("Alt. invoice address: street"),
+  rechnung_plz: z.string().optional().describe("Alt. invoice address: postal code"),
+  rechnung_ort: z.string().optional().describe("Alt. invoice address: city"),
+  rechnung_land: z.string().optional().describe("Alt. invoice address: country (2-char ISO)"),
+  rechnung_ansprechpartner: z.string().optional().describe("Alt. invoice address: contact person"),
+  rechnung_email: z.string().optional().describe("Alt. invoice address: email"),
+
+  // Electronic dispatch
+  gln: z.string().optional().describe("Global Location Number (GLN) for EDI"),
 });
 
 export const AddressEditInput = z.object({

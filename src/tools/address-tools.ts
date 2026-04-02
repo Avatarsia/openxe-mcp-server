@@ -47,6 +47,16 @@ export function normalizeAddressFields(input: Record<string, any>): Record<strin
     'kontakt': 'ansprechpartner',
     'strasse_nr': 'strasse',
     'hausnummer': undefined, // ignore, part of strasse
+    // Document delivery field aliases
+    'rechnungsemail': 'rechnungs_email',
+    'rechnung_email_cc': 'rechnung_cc',
+    'rechnungs_cc': 'rechnung_cc',
+    'invoice_email': 'rechnungs_email',
+    'invoice_cc': 'rechnung_cc',
+    'order_email': 'auftrag_email',
+    'order_cc': 'auftrag_cc',
+    'quote_email': 'angebot_email',
+    'quote_cc': 'angebot_cc',
   };
 
   for (const [wrong, correct] of Object.entries(fieldMap)) {
@@ -97,7 +107,11 @@ export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
       "Optional: vorname, firma, strasse, plz, ort, land, email, telefon, kundennummer (default 'NEU'), projekt, " +
       "telefax, mobil, internetseite, ansprechpartner, abteilung, anrede, titel, adresszusatz, " +
       "iban, swift, inhaber, bank, " +
-      "zahlungszieltage, zahlungszieltageskonto, zahlungszielskonto, versandart, steuernummer, sonstiges.",
+      "zahlungszieltage, zahlungszieltageskonto, zahlungszielskonto, versandart, steuernummer, sonstiges. " +
+      "Document delivery: angebot_email, auftrag_email, rechnungs_email, gutschrift_email, lieferschein_email, bestellung_email (per-doc-type email overrides), " +
+      "angebot_cc, auftrag_cc, rechnung_cc, gutschrift_cc, lieferschein_cc, bestellung_cc (CC emails). " +
+      "Invoice delivery: rechnung_permail, rechnung_papier, rechnung_anzahlpapier. " +
+      "Alt. invoice address: abweichende_rechnungsadresse, rechnung_name/strasse/plz/ort/land/ansprechpartner/email. EDI: gln.",
     inputSchema: zodToJsonSchema(AddressCreateInput) as Record<string, unknown>,
   },
   {
