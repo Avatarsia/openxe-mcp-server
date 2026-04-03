@@ -257,11 +257,21 @@ Alle Tools tragen MCP-Annotations (readOnlyHint, destructiveHint, idempotentHint
 
 ## Fuer Entwickler
 
+### Konfiguration via .env-Datei
+
+Der Server unterstuetzt eine `.env`-Datei im Projektverzeichnis. Kopiere `.env.example` und passe die Werte an:
+
+```bash
+cp .env.example .env
+```
+
+Die `.env`-Datei wird **nicht** nach Git committed (steht in `.gitignore`). Umgebungsvariablen die direkt gesetzt werden (z.B. ueber die MCP-Client-Konfiguration) haben Vorrang vor `.env`.
+
 ### Projektstruktur
 
 ```
 src/
-  index.ts          # MCP-Server Einstiegspunkt
+  index.ts          # MCP-Server Einstiegspunkt (laedt dotenv)
   config.ts         # Umgebungsvariablen (Zod-validiert)
   client/           # HTTP Digest Auth Client fuer OpenXE
   tools/            # Tool Handler (Schreiben via Legacy API)
@@ -285,10 +295,13 @@ docs/
 git clone https://github.com/Avatarsia/openxe-mcp-server.git
 cd openxe-mcp-server
 npm install
+cp .env.example .env     # Dann Werte anpassen
 npm run build
 npm test
 npm start
 ```
+
+Der Server laedt automatisch eine `.env`-Datei aus dem Projektverzeichnis (via [dotenv](https://www.npmjs.com/package/dotenv)). Alternativ koennen die Variablen weiterhin direkt als Umgebungsvariablen oder ueber die MCP-Client-Konfiguration gesetzt werden — `.env` hat die niedrigste Prioritaet.
 
 ### API-Dokumentation
 
