@@ -44,7 +44,9 @@ Der Server wird automatisch heruntergeladen und gestartet -- du musst nichts ins
 
 #### LM Studio
 
-Ab Version 0.3+. Unter **Settings > MCP** einfuegen:
+Ab Version 0.3+. Oeffne **Settings > MCP** und fuege folgendes ein:
+
+**Minimale Konfiguration** (LAN-Betrieb, schneller Einstieg):
 
 ```json
 {
@@ -52,14 +54,48 @@ Ab Version 0.3+. Unter **Settings > MCP** einfuegen:
     "command": "npx",
     "args": ["-y", "github:Avatarsia/openxe-mcp-server"],
     "env": {
-      "OPENXE_URL": "http://dein-openxe-server",
-      "OPENXE_USERNAME": "dein-api-user",
-      "OPENXE_PASSWORD": "dein-api-passwort",
+      "OPENXE_URL": "http://192.168.0.100",
+      "OPENXE_USERNAME": "api-user",
+      "OPENXE_PASSWORD": "mein-passwort",
       "OPENXE_ALLOW_HTTP": "1"
     }
   }
 }
 ```
+
+**Vollstaendige Konfiguration** (mit allen Optionen):
+
+```json
+{
+  "openxe": {
+    "command": "npx",
+    "args": ["-y", "github:Avatarsia/openxe-mcp-server"],
+    "env": {
+      "OPENXE_URL": "http://192.168.0.100",
+      "OPENXE_USERNAME": "api-user",
+      "OPENXE_PASSWORD": "mein-passwort",
+      "OPENXE_ALLOW_HTTP": "1",
+      "OPENXE_MODE": "router",
+      "OPENXE_TIMEOUT": "30000",
+      "OPENXE_AUDIT_LOG": "1"
+    }
+  }
+}
+```
+
+**Was bedeuten die einzelnen Einstellungen?**
+
+| Variable | Wert im Beispiel | Was macht das? |
+|----------|-----------------|----------------|
+| `OPENXE_URL` | `http://192.168.0.100` | Die IP-Adresse oder URL deines OpenXE-Servers im Netzwerk. |
+| `OPENXE_USERNAME` | `api-user` | Der Benutzername, den du in OpenXE unter API angelegt hast. |
+| `OPENXE_PASSWORD` | `mein-passwort` | Das dazugehoerige Passwort. |
+| `OPENXE_ALLOW_HTTP` | `1` | Unterdrueckt die Sicherheitswarnung bei HTTP-Verbindungen. Im lokalen Netzwerk (LAN) ist HTTP in Ordnung -- die Warnung ist fuer Internetverbindungen gedacht, wo HTTPS Pflicht waere. |
+| `OPENXE_MODE` | `router` | Steuert, wie viele Tools das LLM sieht. `router` (Standard) zeigt nur 2 kompakte Tools -- ideal fuer lokale Modelle mit begrenztem Kontextfenster. `full` zeigt alle 69 Tools einzeln. `readonly` erlaubt nur Lesen (kein Erstellen/Bearbeiten/Loeschen). |
+| `OPENXE_TIMEOUT` | `30000` | Wie lange der Server maximal auf eine Antwort von OpenXE wartet (in Millisekunden). 30000 = 30 Sekunden. Bei langsamen Servern oder grossen Abfragen auf 60000 erhoehen. |
+| `OPENXE_AUDIT_LOG` | `1` | Protokolliert jeden einzelnen Tool-Aufruf (welches Tool, welche Parameter, wann). Nuetzlich zum Nachvollziehen, was das LLM gemacht hat. Sensible Daten (IBAN, PayPal, Passwoerter) werden dabei automatisch maskiert. Das Protokoll erscheint in der Konsole (stderr). |
+
+> **Tipp fuer lokale Modelle:** Verwende den `router`-Modus (Standard). Er reduziert den Token-Verbrauch von ~10.000 auf ~1.500 Tokens fuer die Tool-Definitionen -- das laesst mehr Platz fuer deine eigentliche Frage und die Antwort.
 
 #### OpenWebUI + Ollama
 
