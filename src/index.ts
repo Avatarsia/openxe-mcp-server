@@ -73,6 +73,10 @@ import {
   PROCUREMENT_TOOL_DEFINITIONS,
   handleProcurementTool,
 } from "./tools/procurement-tools.js";
+import {
+  REPORT_TOOL_DEFINITIONS,
+  handleReportTool,
+} from "./tools/report-tools.js";
 
 // ---------------------------------------------------------------------------
 // Audit logging (opt-in via OPENXE_AUDIT_LOG=1)
@@ -156,6 +160,14 @@ async function main() {
         "- get-article mit includeEinkaufspreise=true: Zeigt Einkaufspreise/Staffelpreise vom Lieferanten",
         "- Lieferanten finden: list-addresses mit where=lieferantennummer_notEmpty",
         "- Lieferanten anlegen: create-address mit rolle='Lieferant', ustid (lieferantennummer wird automatisch vergeben)",
+        "",
+        "## Berichte (Reports)",
+        "- report-revenue: Umsatzbericht nach Kunde/Artikel/Monat/Quartal/Jahr/Projekt, mit Zeitraum-Filter und Marge",
+        "- report-open-items: Offene-Posten-Liste (mode: liste/altersstruktur/kreditlimit)",
+        "- report-stock: Lagerbestand (mode: uebersicht/nachbestellbedarf/lagerwert)",
+        "- report-procurement: Beschaffung (mode: volumen-lieferant/offene-bestellungen)",
+        "- report-period-comparison: Periodenvergleich (umsatz/auftragseingang/neukunden/rechnungen, monat/quartal/jahr)",
+        "- Alle Berichte sind read-only und liefern formatierte Tabellen",
         "",
         "## Business Queries (vordefiniert)",
         '- action=business-query, params={preset: "nicht-versendet"} — offene Auftraege',
@@ -325,15 +337,17 @@ async function main() {
     ...READ_TOOL_DEFINITIONS,
     ...DASHBOARD_TOOL_DEFINITIONS,
     ...PROCUREMENT_TOOL_DEFINITIONS,
+    ...REPORT_TOOL_DEFINITIONS,
     BUSINESS_QUERY_TOOL_DEFINITION,
     BATCH_PDF_TOOL_DEFINITION,
   ];
 
-  // Read-only mode: only read tools, document read tools, dashboard, and business queries
+  // Read-only mode: only read tools, document read tools, dashboard, reports, and business queries
   const READONLY_TOOLS = [
     ...READ_TOOL_DEFINITIONS,
     ...DOCUMENT_READ_TOOL_DEFINITIONS,
     ...DASHBOARD_TOOL_DEFINITIONS,
+    ...REPORT_TOOL_DEFINITIONS,
     BUSINESS_QUERY_TOOL_DEFINITION,
   ];
 
@@ -381,6 +395,9 @@ async function main() {
   );
   const procurementToolNames = new Set(
     PROCUREMENT_TOOL_DEFINITIONS.map((t: { name: string }) => t.name)
+  );
+  const reportToolNames = new Set(
+    REPORT_TOOL_DEFINITIONS.map((t: { name: string }) => t.name)
   );
 
   // Build a set of tool names allowed in readonly mode for fast lookup
@@ -432,6 +449,9 @@ async function main() {
     }
     if (procurementToolNames.has(name)) {
       return handleProcurementTool(name, toolArgs, client) as Promise<ServerResult>;
+    }
+    if (reportToolNames.has(name)) {
+      return handleReportTool(name, toolArgs, client) as Promise<ServerResult>;
     }
     if (name === "openxe-business-query") {
       return handleBusinessQueryTool(toolArgs, client) as Promise<ServerResult>;

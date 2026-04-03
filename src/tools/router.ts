@@ -11,6 +11,7 @@ import { handleBusinessQueryTool } from "./business-query-tools.js";
 import { handleBatchPDFTool } from "./batch-pdf-tools.js";
 import { handleDashboardTool } from "./dashboard-tools.js";
 import { handleProcurementTool } from "./procurement-tools.js";
+import { handleReportTool } from "./report-tools.js";
 import { BUSINESS_PRESETS } from "../utils/smart-filters.js";
 
 // --- Types ---
@@ -35,13 +36,13 @@ interface ToolResult {
 
 // --- Action Registry ---
 
-type Category = "stammdaten" | "belege" | "beschaffung" | "business" | "shop" | "zeiterfassung" | "system" | "dashboard";
+type Category = "stammdaten" | "belege" | "beschaffung" | "berichte" | "business" | "shop" | "zeiterfassung" | "system" | "dashboard";
 
 interface ActionEntry {
   action: string;
   label: string;
   category: Category;
-  handler: "read" | "document-read" | "document" | "address" | "subscription" | "time" | "business-query" | "batch-pdf" | "dashboard" | "procurement";
+  handler: "read" | "document-read" | "document" | "address" | "subscription" | "time" | "business-query" | "batch-pdf" | "dashboard" | "procurement" | "report";
   toolName: string; // original openxe-* tool name
 }
 
@@ -96,6 +97,13 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "edit-purchase-order", label: "Bestellung bearbeiten (id, lieferdatum, einkaeufer, versandart, ...)", category: "beschaffung", handler: "procurement", toolName: "openxe-edit-purchase-order" },
   { action: "release-purchase-order", label: "Bestellung freigeben", category: "beschaffung", handler: "procurement", toolName: "openxe-release-purchase-order" },
 
+  // === Berichte ===
+  { action: "report-revenue", label: "Umsatzbericht (nach Kunde/Artikel/Monat/Quartal/Jahr/Projekt)", category: "berichte", handler: "report", toolName: "openxe-report-revenue" },
+  { action: "report-open-items", label: "Offene-Posten-Liste / Altersstruktur / Kreditlimit-Auslastung", category: "berichte", handler: "report", toolName: "openxe-report-open-items" },
+  { action: "report-stock", label: "Lagerbestand / Nachbestellbedarf / Lagerwert", category: "berichte", handler: "report", toolName: "openxe-report-stock" },
+  { action: "report-procurement", label: "Beschaffungsbericht (Volumen/Lieferant, offene Bestellungen)", category: "berichte", handler: "report", toolName: "openxe-report-procurement" },
+  { action: "report-period-comparison", label: "Periodenvergleich (aktuell vs. Vorperiode)", category: "berichte", handler: "report", toolName: "openxe-report-period-comparison" },
+
   // === Shop / Sonstiges ===
   { action: "list-subscriptions", label: "Abo-Artikel auflisten [+Smart Filter] (Filter: adresse, artikel, gruppe, projekt, bezeichnung)", category: "shop", handler: "subscription", toolName: "openxe-list-subscriptions" },
   { action: "get-subscription", label: "Abo-Artikel nach ID abrufen (alle Details)", category: "shop", handler: "subscription", toolName: "openxe-get-subscription" },
@@ -142,7 +150,7 @@ for (const entry of ACTION_REGISTRY) {
 
 const DiscoverInput = z.object({
   category: z
-    .enum(["stammdaten", "belege", "beschaffung", "business", "shop", "zeiterfassung", "system", "dashboard", "alle"])
+    .enum(["stammdaten", "belege", "beschaffung", "berichte", "business", "shop", "zeiterfassung", "system", "dashboard", "alle"])
     .optional()
     .default("alle")
     .describe("Kategorie-Filter (default: alle)"),
@@ -151,7 +159,7 @@ const DiscoverInput = z.object({
 export const DISCOVER_TOOL_DEFINITION: ToolDefinition = {
   name: "openxe-discover",
   description:
-    "Zeigt alle verfuegbaren OpenXE-Aktionen. IMMER ZUERST AUFRUFEN wenn du nicht weisst welche Aktionen es gibt. Optional: category='stammdaten'/'belege'/'beschaffung'/'zeiterfassung'/'dashboard'/'alle'",
+    "Zeigt alle verfuegbaren OpenXE-Aktionen. IMMER ZUERST AUFRUFEN wenn du nicht weisst welche Aktionen es gibt. Optional: category='stammdaten'/'belege'/'beschaffung'/'berichte'/'zeiterfassung'/'dashboard'/'alle'",
   inputSchema: zodToJsonSchema(DiscoverInput) as Record<string, unknown>,
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 };
@@ -160,6 +168,7 @@ const CATEGORY_LABELS: Record<Category, string> = {
   stammdaten: "Stammdaten",
   belege: "Belege",
   beschaffung: "Beschaffung (Einkauf)",
+  berichte: "Berichte (Reports)",
   business: "Business Queries",
   shop: "Shop / CRM / Sonstiges",
   zeiterfassung: "Zeiterfassung",
@@ -167,7 +176,7 @@ const CATEGORY_LABELS: Record<Category, string> = {
   dashboard: "Dashboard",
 };
 
-const CATEGORY_ORDER: Category[] = ["stammdaten", "belege", "beschaffung", "business", "shop", "zeiterfassung", "system", "dashboard"];
+const CATEGORY_ORDER: Category[] = ["stammdaten", "belege", "beschaffung", "berichte", "business", "shop", "zeiterfassung", "system", "dashboard"];
 
 export function handleDiscover(args: Record<string, unknown>): ToolResult {
   const { category } = DiscoverInput.parse(args);
@@ -282,6 +291,8 @@ export async function handleRouter(
       return handleDashboardTool(entry.toolName, params, client);
     case "procurement":
       return handleProcurementTool(entry.toolName, params, client);
+    case "report":
+      return handleReportTool(entry.toolName, params, client);
     default:
       return {
         content: [{ type: "text", text: `Internal error: unknown handler "${entry.handler}"` }],
