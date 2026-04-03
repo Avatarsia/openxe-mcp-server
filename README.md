@@ -6,7 +6,7 @@ Verbinde dein [OpenXE ERP](https://openxe.de/) mit jedem KI-Assistenten -- per [
 
 ## Was ist das?
 
-Dieser Server verbindet dein OpenXE ERP-System mit KI-Assistenten wie Claude, ChatGPT, Ollama, LM Studio, OpenWebUI und anderen. Du stellst Fragen auf Deutsch, und der Assistent liest und schreibt automatisch in deinem ERP.
+Dieser Server verbindet dein OpenXE ERP-System mit lokalen KI-Assistenten wie LM Studio, Ollama, OpenWebUI und anderen MCP-faehigen Clients. Du stellst Fragen auf Deutsch, und der Assistent liest und schreibt automatisch in deinem ERP -- alles lokal, keine Cloud noetig.
 
 **Beispiele:**
 
@@ -20,7 +20,7 @@ Dieser Server verbindet dein OpenXE ERP-System mit KI-Assistenten wie Claude, Ch
 
 - **Node.js** Version 20 oder neuer ([Download](https://nodejs.org/))
 - **OpenXE** mit aktiviertem API-Zugang
-- Ein **KI-Assistent** der MCP unterstuetzt (Claude, LM Studio, OpenWebUI, etc.)
+- Ein **KI-Assistent** der MCP unterstuetzt (LM Studio, OpenWebUI, Ollama, etc.)
 
 ## Einrichtung
 
@@ -59,36 +59,6 @@ Ab Version 0.3+. Unter **Settings > MCP** einfuegen:
     }
   }
 }
-```
-
-#### Claude Desktop
-
-Config-Datei oeffnen (meist `%APPDATA%\Claude\claude_desktop_config.json` unter Windows oder `~/.config/claude/claude_desktop_config.json` unter Linux/Mac):
-
-```json
-{
-  "mcpServers": {
-    "openxe": {
-      "command": "npx",
-      "args": ["-y", "github:Avatarsia/openxe-mcp-server"],
-      "env": {
-        "OPENXE_URL": "http://dein-openxe-server",
-        "OPENXE_USERNAME": "dein-api-user",
-        "OPENXE_PASSWORD": "dein-api-passwort"
-      }
-    }
-  }
-}
-```
-
-#### Claude Code (CLI)
-
-```bash
-claude mcp add -s user \
-  -e OPENXE_URL=http://dein-openxe-server \
-  -e OPENXE_USERNAME=dein-api-user \
-  -e OPENXE_PASSWORD=dein-api-passwort \
-  openxe -- npx -y github:Avatarsia/openxe-mcp-server
 ```
 
 #### OpenWebUI + Ollama
