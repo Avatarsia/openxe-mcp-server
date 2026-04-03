@@ -839,8 +839,9 @@ async function handleProcurementReport(
     const todayDate = todayStr();
     const rows: Record<string, string | number>[] = orders.map((o: any) => {
       const lieferdatum = o.lieferdatum || "";
+      const hasRealDate = lieferdatum && lieferdatum > "0000-00-00";
       const ueberfaellig =
-        lieferdatum && lieferdatum < todayDate ? "ja" : "nein";
+        hasRealDate && lieferdatum < todayDate ? "ja" : "nein";
       return {
         belegnr: o.belegnr || "",
         name: String(o.name || "").substring(0, 30),
