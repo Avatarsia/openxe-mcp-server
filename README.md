@@ -330,6 +330,7 @@ Verifizierte Dokumentation im Verzeichnis `docs/api-reference/`:
 | Protokoll fehlt bei API-Weiterfuehren | [#244](https://github.com/OpenXE-org/OpenXE/issues/244) | -- |
 | Datei-Upload ignoriert stichwoerter | [#245](https://github.com/OpenXE-org/OpenXE/issues/245), PR [#246](https://github.com/OpenXE-org/OpenXE/pull/246) | -- |
 | Tracking in falscher Tabelle | [#247](https://github.com/OpenXE-org/OpenXE/issues/247), PR [#248](https://github.com/OpenXE-org/OpenXE/pull/248) | -- |
+| Gemma 4 schein Inkompatibel zu sein| -- |
 
 ## Lizenz
 
