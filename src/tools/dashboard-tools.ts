@@ -1,8 +1,28 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
-import { fetchFilteredList } from "../utils/field-filter.js";
-import { fetchPurchaseOrders } from "../utils/purchase-order-fetch.js";
+import { fetchFilteredList, FETCH_ALL_SAFETY_CAP } from "../utils/field-filter.js";
+import { fetchPurchaseOrdersWithMeta, PURCHASE_ORDER_SCAN_CAP } from "../utils/purchase-order-fetch.js";
+
+/**
+ * KPIs must never under-report silently. If fetchFilteredList had to stop
+ * because of the safety cap (defect pagination or legitimately huge dataset),
+ * we attach a loud `_warning` so the caller can treat the KPI as a lower
+ * bound instead of a true count.
+ */
+function withTruncationWarning(
+  payload: Record<string, unknown>,
+  meta: { truncated: boolean }
+): Record<string, unknown> {
+  if (!meta.truncated) return payload;
+  return {
+    ...payload,
+    _warning:
+      `Result is a lower bound — underlying dataset exceeds the safety cap ` +
+      `of ${FETCH_ALL_SAFETY_CAP} records. Raise FETCH_ALL_SAFETY_CAP or ` +
+      `narrow the query.`,
+  };
+}
 
 // --- Types ---
 
@@ -113,21 +133,25 @@ function round2(n: number): number {
 
 // --- KPI handlers ---
 
+// All KPIs use fetchAll: true — we want exact counts/sums, not the first N
+// records. If the dataset exceeds FETCH_ALL_SAFETY_CAP, meta.truncated is
+// set and withTruncationWarning() attaches a loud _warning to the response.
+
 async function kpiUmsatzMonat(client: OpenXEClient, now: Date): Promise<Record<string, unknown>> {
   const result = await fetchFilteredList(
     client,
     "/v1/belege/rechnungen",
     { datum_gte: monthStart(now), datum_lte: today(now) },
-    { maxResults: 500 }
+    { fetchAll: true, skipSlim: true }
   );
   const summe = round2(sumField(result.data, "soll"));
-  return {
+  return withTruncationWarning({
     kpi: "umsatz-monat",
     wert: summe,
     waehrung: "EUR",
     zeitraum: monthLabel(now),
     basis: result.data.length + " Rechnungen",
-  };
+  }, result.meta);
 }
 
 async function kpiUmsatzJahr(client: OpenXEClient, now: Date): Promise<Record<string, unknown>> {
@@ -135,16 +159,16 @@ async function kpiUmsatzJahr(client: OpenXEClient, now: Date): Promise<Record<st
     client,
     "/v1/belege/rechnungen",
     { datum_gte: yearStart(now), datum_lte: today(now) },
-    { maxResults: 2000 }
+    { fetchAll: true, skipSlim: true }
   );
   const summe = round2(sumField(result.data, "soll"));
-  return {
+  return withTruncationWarning({
     kpi: "umsatz-jahr",
     wert: summe,
     waehrung: "EUR",
     zeitraum: String(now.getFullYear()),
     basis: result.data.length + " Rechnungen",
-  };
+  }, result.meta);
 }
 
 async function kpiOffeneAuftraege(client: OpenXEClient): Promise<Record<string, unknown>> {
@@ -152,13 +176,13 @@ async function kpiOffeneAuftraege(client: OpenXEClient): Promise<Record<string, 
     client,
     "/v1/belege/auftraege",
     { status: "freigegeben" },
-    { maxResults: 500 }
+    { fetchAll: true, skipSlim: true }
   );
-  return {
+  return withTruncationWarning({
     kpi: "offene-auftraege",
     wert: result.data.length,
     status: "freigegeben",
-  };
+  }, result.meta);
 }
 
 async function kpiOffeneRechnungen(client: OpenXEClient): Promise<Record<string, unknown>> {
@@ -166,7 +190,7 @@ async function kpiOffeneRechnungen(client: OpenXEClient): Promise<Record<string,
     client,
     "/v1/belege/rechnungen",
     { status: "freigegeben" },
-    { maxResults: 1000 }
+    { fetchAll: true, skipSlim: true }
   );
   const unbezahlt = result.data.filter((r: any) => {
     const soll = parseFloat(r.soll) || 0;
@@ -174,12 +198,12 @@ async function kpiOffeneRechnungen(client: OpenXEClient): Promise<Record<string,
     return soll > ist;
   });
   const summe = round2(sumField(unbezahlt, "soll") - sumField(unbezahlt, "ist"));
-  return {
+  return withTruncationWarning({
     kpi: "offene-rechnungen",
     anzahl: unbezahlt.length,
     offener_betrag: summe,
     waehrung: "EUR",
-  };
+  }, result.meta);
 }
 
 async function kpiUeberfaelligeRechnungen(client: OpenXEClient, now: Date): Promise<Record<string, unknown>> {
@@ -187,7 +211,7 @@ async function kpiUeberfaelligeRechnungen(client: OpenXEClient, now: Date): Prom
     client,
     "/v1/belege/rechnungen",
     { status: "freigegeben" },
-    { maxResults: 1000 }
+    { fetchAll: true, skipSlim: true }
   );
   const cutoff = new Date(now);
   cutoff.setDate(cutoff.getDate() - 30);
@@ -199,13 +223,13 @@ async function kpiUeberfaelligeRechnungen(client: OpenXEClient, now: Date): Prom
     return soll > ist && r.datum && r.datum <= cutoffStr;
   });
   const summe = round2(sumField(ueberfaellig, "soll") - sumField(ueberfaellig, "ist"));
-  return {
+  return withTruncationWarning({
     kpi: "ueberfaellige-rechnungen",
     anzahl: ueberfaellig.length,
     offener_betrag: summe,
     waehrung: "EUR",
     schwelle: ">30 Tage",
-  };
+  }, result.meta);
 }
 
 async function kpiTopKunde(client: OpenXEClient, now: Date): Promise<Record<string, unknown>> {
@@ -213,7 +237,7 @@ async function kpiTopKunde(client: OpenXEClient, now: Date): Promise<Record<stri
     client,
     "/v1/belege/rechnungen",
     { datum_gte: yearStart(now), datum_lte: today(now) },
-    { maxResults: 2000 }
+    { fetchAll: true, skipSlim: true }
   );
   const byKunde = new Map<string, { name: string; summe: number; count: number }>();
   for (const r of result.data) {
@@ -229,7 +253,7 @@ async function kpiTopKunde(client: OpenXEClient, now: Date): Promise<Record<stri
       top = { kundennummer: kn, name: entry.name, summe: entry.summe, count: entry.count };
     }
   }
-  return {
+  return withTruncationWarning({
     kpi: "top-kunde",
     kundennummer: top.kundennummer,
     name: top.name,
@@ -237,7 +261,7 @@ async function kpiTopKunde(client: OpenXEClient, now: Date): Promise<Record<stri
     waehrung: "EUR",
     zeitraum: String(now.getFullYear()),
     basis: top.count + " Rechnungen",
-  };
+  }, result.meta);
 }
 
 async function kpiAuftragseingangWoche(client: OpenXEClient, now: Date): Promise<Record<string, unknown>> {
@@ -245,16 +269,16 @@ async function kpiAuftragseingangWoche(client: OpenXEClient, now: Date): Promise
     client,
     "/v1/belege/auftraege",
     { datum_gte: weekStart(now), datum_lte: today(now) },
-    { maxResults: 500 }
+    { fetchAll: true, skipSlim: true }
   );
   const summe = round2(sumField(result.data, "gesamtsumme"));
-  return {
+  return withTruncationWarning({
     kpi: "auftragseingang-woche",
     anzahl: result.data.length,
     summe,
     waehrung: "EUR",
     zeitraum: "KW ab " + weekStart(now),
-  };
+  }, result.meta);
 }
 
 async function kpiArtikelAnzahl(client: OpenXEClient): Promise<Record<string, unknown>> {
@@ -262,14 +286,14 @@ async function kpiArtikelAnzahl(client: OpenXEClient): Promise<Record<string, un
     client,
     "/v1/artikel",
     {},
-    { maxResults: 5000 }
+    { fetchAll: true, skipSlim: true }
   );
   const aktiv = result.data.filter((r: any) => String(r.inaktiv || "0") !== "1");
-  return {
+  return withTruncationWarning({
     kpi: "artikel-anzahl",
     wert: aktiv.length,
     gesamt: result.data.length,
-  };
+  }, result.meta);
 }
 
 async function kpiKundenAnzahl(client: OpenXEClient): Promise<Record<string, unknown>> {
@@ -277,34 +301,43 @@ async function kpiKundenAnzahl(client: OpenXEClient): Promise<Record<string, unk
     client,
     "/v1/adressen",
     {},
-    { includeDeleted: false }
+    { fetchAll: true, skipSlim: true, includeDeleted: false }
   );
   const kunden = result.data.filter((a: any) => {
     const knr = String(a.kundennummer || "").trim();
     return knr !== "" && !knr.startsWith("DEL");
   });
-  return {
+  return withTruncationWarning({
     kpi: "kunden-anzahl",
     wert: kunden.length,
     label: "aktive Kunden mit Kundennummer",
-  };
+  }, result.meta);
 }
 
 // --- Procurement KPIs ---
 // NOTE: Bestellungen (purchase orders) use the Legacy API, not REST v1.
 // We try BelegeList first (efficient), then fall back to iterative BestellungGet.
 
-async function fetchPurchaseOrdersForKpi(client: OpenXEClient): Promise<any[]> {
-  return fetchPurchaseOrders(client);
+function withPurchaseOrderWarning(
+  payload: Record<string, unknown>,
+  truncated: boolean
+): Record<string, unknown> {
+  if (!truncated) return payload;
+  return {
+    ...payload,
+    _warning:
+      `Purchase order scan hit the cap of ${PURCHASE_ORDER_SCAN_CAP} IDs — ` +
+      `result is a lower bound.`,
+  };
 }
 
 async function kpiOffeneBestellungen(client: OpenXEClient): Promise<Record<string, unknown>> {
-  const data = await fetchPurchaseOrdersForKpi(client);
-  const aktiv = data.filter((r: any) =>
+  const { orders, truncated } = await fetchPurchaseOrdersWithMeta(client);
+  const aktiv = orders.filter((r: any) =>
     ["offen", "freigegeben", "bestellt", "angemahnt"].includes(String(r.status || "").toLowerCase())
   );
   const summe = round2(sumField(aktiv, "gesamtsumme"));
-  return {
+  return withPurchaseOrderWarning({
     kpi: "offene-bestellungen",
     anzahl: aktiv.length,
     gesamtsumme: summe,
@@ -315,22 +348,22 @@ async function kpiOffeneBestellungen(client: OpenXEClient): Promise<Record<strin
       bestellt: aktiv.filter((r: any) => r.status === "bestellt").length,
       angemahnt: aktiv.filter((r: any) => r.status === "angemahnt").length,
     },
-  };
+  }, truncated);
 }
 
 async function kpiBestellvolumenMonat(client: OpenXEClient, now: Date): Promise<Record<string, unknown>> {
-  const data = await fetchPurchaseOrdersForKpi(client);
+  const { orders, truncated } = await fetchPurchaseOrdersWithMeta(client);
   const mStart = monthStart(now);
   const tDay = today(now);
-  const monat = data.filter((r: any) => r.datum && r.datum >= mStart && r.datum <= tDay);
+  const monat = orders.filter((r: any) => r.datum && r.datum >= mStart && r.datum <= tDay);
   const summe = round2(sumField(monat, "gesamtsumme"));
-  return {
+  return withPurchaseOrderWarning({
     kpi: "bestellvolumen-monat",
     wert: summe,
     waehrung: "EUR",
     zeitraum: monthLabel(now),
     basis: monat.length + " Bestellungen",
-  };
+  }, truncated);
 }
 
 // --- Dispatcher ---

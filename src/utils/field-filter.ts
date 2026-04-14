@@ -6,9 +6,17 @@ export interface FilteredListResult {
     total_from_api: number;    // total records fetched from API
     filtered_out: number;       // records removed by DEL filter
     returned: number;           // records in this response
-    truncated: boolean;         // true if more exist than returned
+    truncated: boolean;         // true if we stopped before the API ran out
   };
 }
+
+/**
+ * Hard safety cap for fetchAll mode. Prevents runaway loops on broken
+ * pagination. If a real dataset grows past this, the caller receives a loud
+ * `truncated: true` flag so KPIs/reports can surface a warning instead of
+ * silently under-reporting. Raise if legitimate data exceeds it.
+ */
+export const FETCH_ALL_SAFETY_CAP = 10000;
 
 export async function fetchFilteredList(
   client: OpenXEClient,
@@ -29,8 +37,14 @@ export async function fetchFilteredList(
   const pageSize = 100; // fetch in large chunks to minimize API calls
   let totalFetched = 0;
   let totalFilteredOut = 0;
-  const maxPages = fetchAll ? 50 : 10; // higher safety limit when fetching all
   const stopAtMax = !fetchAll; // only stop early if not fetching all
+  // fetchAll paginates until the API runs out, capped by FETCH_ALL_SAFETY_CAP.
+  // Without fetchAll, 10 pages × 100 = 1000 raw records max (then maxResults trims).
+  const maxPages = fetchAll ? Math.ceil(FETCH_ALL_SAFETY_CAP / pageSize) : 10;
+
+  // Track why the loop exits. If we never saw an empty or short page AND we
+  // never drained the API, we hit a cap and the result is a lower bound.
+  let exhaustedApi = false;
 
   while (page <= maxPages) {
     const result = await client.get(path, { ...params, page: String(page), items: String(pageSize) });
@@ -46,7 +60,7 @@ export async function fetchFilteredList(
       list = [];
     }
 
-    if (list.length === 0) break; // no more data from API
+    if (list.length === 0) { exhaustedApi = true; break; }
 
     const rawCount = list.length;
     totalFetched += rawCount;
@@ -61,18 +75,29 @@ export async function fetchFilteredList(
     allRecords = allRecords.concat(list);
 
     // If API returned fewer records than requested, we've reached the last page
-    if (rawCount < pageSize) break;
+    if (rawCount < pageSize) { exhaustedApi = true; break; }
     if (stopAtMax && allRecords.length >= maxResults) break;
+    if (fetchAll && allRecords.length >= FETCH_ALL_SAFETY_CAP) break;
 
     page++;
   }
 
-  // Truncate to maxResults (skip when fetchAll — caller handles truncation after where)
-  const effectiveMax = fetchAll ? allRecords.length : maxResults;
-  const { data: truncated, truncated: wasTruncated } = truncateWithWarning(allRecords, effectiveMax);
+  // In fetchAll mode keep everything (plus the safety-cap truncated flag).
+  // In default mode, trim to maxResults and flag truncation if we saw more.
+  let finalData: any[];
+  let wasTruncated: boolean;
+  if (fetchAll) {
+    finalData = allRecords;
+    wasTruncated = !exhaustedApi; // hit safety cap or maxPages
+  } else {
+    const trimmed = truncateWithWarning(allRecords, maxResults);
+    finalData = trimmed.data as any[];
+    // Truncated if we trimmed the array OR if we stopped paginating early
+    // because we already had enough records while the API still had more.
+    wasTruncated = trimmed.truncated || !exhaustedApi;
+  }
 
   // Apply slim (unless caller wants raw data for further filtering)
-  let finalData = truncated;
   if (slimFields && !skipSlim) {
     finalData = applySlimMode(finalData, [...slimFields]) as any[];
   }

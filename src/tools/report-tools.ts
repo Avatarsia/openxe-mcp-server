@@ -2,9 +2,22 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { parseZeitraum } from "../utils/smart-filters.js";
-import { fetchFilteredList } from "../utils/field-filter.js";
-import { fetchPurchaseOrders } from "../utils/purchase-order-fetch.js";
+import { fetchFilteredList, FETCH_ALL_SAFETY_CAP } from "../utils/field-filter.js";
+import { fetchPurchaseOrdersWithMeta, PURCHASE_ORDER_SCAN_CAP } from "../utils/purchase-order-fetch.js";
 
+/**
+ * Append a visible warning if any source query hit the safety cap. Keeps the
+ * warning verbatim visible in the CLI output of reports, so lower-bound
+ * results cannot be mistaken for true counts.
+ */
+function appendTruncationWarning(text: string, truncated: boolean, source: string): string {
+  if (!truncated) return text;
+  return (
+    text +
+    `\n\nWARNUNG: ${source} uebersteigt den Safety-Cap von ${FETCH_ALL_SAFETY_CAP} ` +
+    `Datensaetzen — Ergebnis ist eine Untergrenze.`
+  );
+}
 // --- Types ---
 
 interface ToolDefinition {
@@ -238,12 +251,21 @@ async function handleRevenueReport(
 
   // 1. Fetch invoices (with positions for artikel grouping or margin)
   const needPositions = groupBy === "artikel" || includeMargin;
-  const includeParam = needPositions ? "positionen" : undefined;
-  const apiParams: Record<string, string> = { items: "1000" };
-  if (includeParam) apiParams.include = includeParam;
+  const apiParams: Record<string, string> = {};
+  if (needPositions) apiParams.include = "positionen";
 
-  const result = await client.get("/v1/belege/rechnungen", apiParams);
-  let invoices: any[] = Array.isArray(result.data) ? result.data : [];
+  // Use fetchFilteredList so (a) we paginate across the whole dataset (not
+  // just the first 1000) and (b) the {data: {...}} / array wrapping is
+  // normalised. A flat client.get returned an object here, making the
+  // previous `Array.isArray` branch always false → report was empty.
+  const result = await fetchFilteredList(
+    client,
+    "/v1/belege/rechnungen",
+    apiParams,
+    { fetchAll: true, skipSlim: true }
+  );
+  let invoices: any[] = result.data;
+  const revenueTruncated = result.meta.truncated;
 
   // 2. Filter by status=freigegeben
   invoices = invoices.filter(
@@ -356,6 +378,7 @@ async function handleRevenueReport(
   text += `\n--- Summe: ${totalUmsatz} EUR, ${totalAnzahl} Rechnungen`;
   if (top) text += ` (Top ${top})`;
   text += ` ---`;
+  text = appendTruncationWarning(text, revenueTruncated, "Rechnungs-Datenmenge");
 
   return { content: [{ type: "text", text }] };
 }
@@ -374,10 +397,11 @@ async function handleOpenItemsReport(
   const result = await fetchFilteredList(
     client,
     "/v1/belege/rechnungen",
-    { items: "1000" },
-    { maxResults: 2000, skipSlim: true, fetchAll: true }
+    {},
+    { fetchAll: true, skipSlim: true }
   );
   let invoices: any[] = result.data;
+  let openItemsTruncated = result.meta.truncated;
 
   // Filter to open items: soll > ist AND status=freigegeben
   invoices = invoices.filter((r: any) => {
@@ -445,6 +469,7 @@ async function handleOpenItemsReport(
     text += `${rows.length} offene Rechnungen\n\n`;
     text += buildTable(columns, rows);
     text += `\n\n--- Summe offen: ${totalOffen} EUR ---`;
+    text = appendTruncationWarning(text, openItemsTruncated, "Rechnungs-Datenmenge");
 
     return { content: [{ type: "text", text }] };
   }
@@ -494,6 +519,7 @@ async function handleOpenItemsReport(
     let text = `=== Altersstruktur offene Posten ===\n\n`;
     text += buildTable(["bucket", "anzahl", "summe_offen"], rows);
     text += `\n\n--- Gesamt offen: ${totalOffen} EUR (${invoices.length} Rechnungen) ---`;
+    text = appendTruncationWarning(text, openItemsTruncated, "Rechnungs-Datenmenge");
 
     return { content: [{ type: "text", text }] };
   }
@@ -520,10 +546,11 @@ async function handleOpenItemsReport(
     const addrResult = await fetchFilteredList(
       client,
       "/v1/adressen",
-      { items: "1000" },
-      { maxResults: 5000, skipSlim: true, fetchAll: true }
+      {},
+      { fetchAll: true, skipSlim: true }
     );
     const addresses = addrResult.data;
+    const addrTruncated = addrResult.meta.truncated;
     const addrMap = new Map<string, any>();
     for (const a of addresses) {
       const kn = String(a.kundennummer || "");
@@ -558,6 +585,8 @@ async function handleOpenItemsReport(
       rows
     );
     text += `\n\n--- ${rows.length} Kunden mit offenen Posten ---`;
+    text = appendTruncationWarning(text, openItemsTruncated, "Rechnungs-Datenmenge");
+    text = appendTruncationWarning(text, addrTruncated, "Adress-Datenmenge");
 
     return { content: [{ type: "text", text }] };
   }
@@ -580,11 +609,14 @@ async function handleStockReport(
 
   if (mode === "lagerwert") {
     // Fetch articles with lagerbestand and verkaufspreise
-    const result = await client.get("/v1/artikel", {
-      items: "1000",
-      include: "lagerbestand,verkaufspreise",
-    });
-    let articles: any[] = Array.isArray(result.data) ? result.data : [];
+    const result = await fetchFilteredList(
+      client,
+      "/v1/artikel",
+      { include: "lagerbestand,verkaufspreise" },
+      { fetchAll: true, skipSlim: true }
+    );
+    const stockTruncated = result.meta.truncated;
+    let articles: any[] = result.data;
     articles = articles.filter(
       (a: any) => String(a.lagerartikel || "0") === "1"
     );
@@ -635,16 +667,20 @@ async function handleStockReport(
     text += `${rows.length - 1} Lagerartikel mit Bestand\n\n`;
     text += buildTable(columns, rows);
     text += `\n\n--- Gesamter Lagerwert (VK): ${round2(totalWert)} EUR ---`;
+    text = appendTruncationWarning(text, stockTruncated, "Artikel-Datenmenge");
 
     return { content: [{ type: "text", text }] };
   }
 
   // uebersicht and nachbestellbedarf: fetch with lagerbestand
-  const result = await client.get("/v1/artikel", {
-    items: "1000",
-    include: "lagerbestand",
-  });
-  let articles: any[] = Array.isArray(result.data) ? result.data : [];
+  const result = await fetchFilteredList(
+    client,
+    "/v1/artikel",
+    { include: "lagerbestand" },
+    { fetchAll: true, skipSlim: true }
+  );
+  const stockListTruncated = result.meta.truncated;
+  let articles: any[] = result.data;
   articles = articles.filter(
     (a: any) => String(a.lagerartikel || "0") === "1"
   );
@@ -691,6 +727,7 @@ async function handleStockReport(
     text += `${rows.length} Lagerartikel\n\n`;
     text += buildTable(columns, rows);
     text += `\n\n--- ${rows.length} Artikel angezeigt ---`;
+    text = appendTruncationWarning(text, stockListTruncated, "Artikel-Datenmenge");
 
     return { content: [{ type: "text", text }] };
   }
@@ -738,6 +775,7 @@ async function handleStockReport(
     text += `${rows.length} Artikel unter Mindestlager\n\n`;
     text += buildTable(columns, rows);
     text += `\n\n--- ${rows.length} Artikel mit Nachbestellbedarf ---`;
+    text = appendTruncationWarning(text, stockListTruncated, "Artikel-Datenmenge");
 
     return { content: [{ type: "text", text }] };
   }
@@ -758,8 +796,11 @@ async function handleProcurementReport(
 ): Promise<ToolResult> {
   const { mode, zeitraum } = ProcurementReportInput.parse(args);
 
-  // Fetch purchase orders via shared utility
-  let orders = await fetchPurchaseOrders(client);
+  // Fetch purchase orders via shared utility (with meta so we can warn when
+  // the scan fallback hit the ID cap).
+  const poResult = await fetchPurchaseOrdersWithMeta(client);
+  let orders = poResult.orders;
+  const poTruncated = poResult.truncated;
 
   if (mode === "volumen-lieferant") {
     // Filter by zeitraum if set
@@ -817,6 +858,11 @@ async function handleProcurementReport(
     text += `${rows.length} Lieferanten\n\n`;
     text += buildTable(columns, rows);
     text += `\n\n--- Gesamtvolumen: ${totalVolumen} EUR (${orders.length} Bestellungen) ---`;
+    if (poTruncated) {
+      text +=
+        `\n\nWARNUNG: Bestellungs-Scan hat den Cap von ${PURCHASE_ORDER_SCAN_CAP} IDs ` +
+        `erreicht — Ergebnis ist eine Untergrenze.`;
+    }
 
     return { content: [{ type: "text", text }] };
   }
@@ -885,6 +931,11 @@ async function handleProcurementReport(
     text += `\n\n`;
     text += buildTable(columns, rows);
     text += `\n\n--- Gesamtsumme: ${totalSumme} EUR ---`;
+    if (poTruncated) {
+      text +=
+        `\n\nWARNUNG: Bestellungs-Scan hat den Cap von ${PURCHASE_ORDER_SCAN_CAP} IDs ` +
+        `erreicht — Ergebnis ist eine Untergrenze.`;
+    }
 
     return { content: [{ type: "text", text }] };
   }
@@ -963,15 +1014,19 @@ async function handlePeriodComparison(
   let vorperiode = 0;
   let einheit = "";
   let details = "";
+  let sourceTruncated = false;
+  let truncatedSourceLabel = "";
 
   switch (metric) {
     case "umsatz": {
       const result = await fetchFilteredList(
         client,
         "/v1/belege/rechnungen",
-        { items: "1000" },
-        { maxResults: 2000, skipSlim: true, fetchAll: true }
+        {},
+        { fetchAll: true, skipSlim: true }
       );
+      sourceTruncated = result.meta.truncated;
+      truncatedSourceLabel = "Rechnungs-Datenmenge";
       const invoices = result.data.filter(
         (r: any) => String(r.status || "").toLowerCase() === "freigegeben"
       );
@@ -994,9 +1049,11 @@ async function handlePeriodComparison(
       const result = await fetchFilteredList(
         client,
         "/v1/belege/auftraege",
-        { items: "1000" },
-        { maxResults: 2000, skipSlim: true, fetchAll: true }
+        {},
+        { fetchAll: true, skipSlim: true }
       );
+      sourceTruncated = result.meta.truncated;
+      truncatedSourceLabel = "Auftrags-Datenmenge";
       const orders = result.data;
 
       const currOrd = orders.filter(
@@ -1017,9 +1074,11 @@ async function handlePeriodComparison(
       const result = await fetchFilteredList(
         client,
         "/v1/adressen",
-        { items: "1000" },
-        { maxResults: 5000, skipSlim: true, fetchAll: true }
+        {},
+        { fetchAll: true, skipSlim: true }
       );
+      sourceTruncated = result.meta.truncated;
+      truncatedSourceLabel = "Adress-Datenmenge";
       const addresses = result.data.filter((a: any) => {
         const kn = String(a.kundennummer || "").trim();
         return kn !== "" && !kn.startsWith("DEL");
@@ -1048,9 +1107,11 @@ async function handlePeriodComparison(
       const result = await fetchFilteredList(
         client,
         "/v1/belege/rechnungen",
-        { items: "1000" },
-        { maxResults: 2000, skipSlim: true, fetchAll: true }
+        {},
+        { fetchAll: true, skipSlim: true }
       );
+      sourceTruncated = result.meta.truncated;
+      truncatedSourceLabel = "Rechnungs-Datenmenge";
       const invoices = result.data;
 
       const currInv = invoices.filter(
@@ -1079,6 +1140,7 @@ async function handlePeriodComparison(
   text += `Vorperiode (${previous.von} bis ${previous.bis}): ${vorperiode} ${einheit}\n`;
   text += `Delta: ${trend}${delta} ${einheit} (${trend}${veraenderungProzent}%)\n`;
   if (details) text += `\n${details}`;
+  text = appendTruncationWarning(text, sourceTruncated, truncatedSourceLabel);
 
   return { content: [{ type: "text", text }] };
 }

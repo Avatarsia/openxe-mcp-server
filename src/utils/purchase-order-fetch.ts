@@ -1,49 +1,89 @@
 import { OpenXEClient } from "../client/openxe-client.js";
 
 /**
+ * Hard safety cap on BestellungGet iteration — prevents runaway scans.
+ * If a real instance has more purchase orders than this, the caller must
+ * narrow the query or we need a different fetch strategy.
+ */
+export const PURCHASE_ORDER_SCAN_CAP = 5000;
+
+/**
+ * How many consecutive BestellungGet failures to tolerate before concluding
+ * we are past the highest existing ID. OpenXE ID sequences can have large
+ * gaps from deletes/migrations, so this needs to be generous.
+ */
+const CONSECUTIVE_MISS_LIMIT = 50;
+
+export interface PurchaseOrdersResult {
+  orders: any[];
+  truncated: boolean;      // true if we hit PURCHASE_ORDER_SCAN_CAP
+  strategy: "belegelist" | "scan";
+}
+
+/**
  * Fetch all purchase orders from OpenXE using the Legacy API.
  *
- * Strategy 1: Try BelegeList with typ=bestellung (efficient, single call).
- * Strategy 2: If that fails or returns empty, iterate BestellungGet for IDs
- *             1..200, stopping after 3 consecutive failures.
+ * Strategy 1: BelegeList with typ=bestellung — single efficient call.
+ * Strategy 2: Iterative BestellungGet, scanning IDs upward until we see
+ *             CONSECUTIVE_MISS_LIMIT consecutive failures or hit the cap.
  *
- * This is shared between dashboard-tools and business-query-tools so that
- * both have a working fallback when BelegeList is unavailable.
+ * Why the iterative scan is generous (50 misses, 5000 cap instead of the
+ * old 3 misses / 200 cap): OpenXE assigns sequential IDs across all belege
+ * types (auftraege, rechnungen, bestellungen share the same counter), so
+ * purchase order IDs can be sparse and high — e.g. IDs 1, 42, 317, 1804.
+ * A 3-miss / 200-cap window silently loses orders on any non-trivial
+ * instance.
  */
 export async function fetchPurchaseOrders(client: OpenXEClient): Promise<any[]> {
-  // Strategy 1: Try BelegeList with typ=bestellung
+  const result = await fetchPurchaseOrdersWithMeta(client);
+  return result.orders;
+}
+
+export async function fetchPurchaseOrdersWithMeta(
+  client: OpenXEClient
+): Promise<PurchaseOrdersResult> {
+  // Strategy 1: BelegeList (fast path when available)
   try {
-    const result = await client.legacyPost("BelegeList", { typ: "bestellung" });
-    if (result.success && result.data) {
-      const data = result.data;
-      if (Array.isArray(data) && data.length > 0) return data;
+    const bl = await client.legacyPost("BelegeList", { typ: "bestellung" });
+    if (bl.success && bl.data) {
+      const data = bl.data;
+      if (Array.isArray(data) && data.length > 0) {
+        return { orders: data, truncated: false, strategy: "belegelist" };
+      }
       if (typeof data === "object") {
         const obj = data as Record<string, unknown>;
         for (const val of Object.values(obj)) {
-          if (Array.isArray(val) && val.length > 0) return val;
+          if (Array.isArray(val) && val.length > 0) {
+            return { orders: val, truncated: false, strategy: "belegelist" };
+          }
         }
       }
     }
   } catch {
-    // BelegeList not available — fall through to iteration
+    // BelegeList not available on this instance — fall through to scan
   }
 
-  // Strategy 2: Iterate BestellungGet for IDs 1..200
+  // Strategy 2: Scan BestellungGet upward
   const orders: any[] = [];
-  let consecutiveFailures = 0;
-  for (let id = 1; id <= 200; id++) {
+  let consecutiveMisses = 0;
+  let id = 1;
+  for (; id <= PURCHASE_ORDER_SCAN_CAP; id++) {
     try {
       const result = await client.legacyPost("BestellungGet", { id: String(id) });
       if (result.success && result.data) {
         orders.push(result.data);
-        consecutiveFailures = 0;
+        consecutiveMisses = 0;
       } else {
-        consecutiveFailures++;
+        consecutiveMisses++;
       }
     } catch {
-      consecutiveFailures++;
+      consecutiveMisses++;
     }
-    if (consecutiveFailures >= 3) break;
+    if (consecutiveMisses >= CONSECUTIVE_MISS_LIMIT) break;
   }
-  return orders;
+
+  // Truncated only if we actually reached the cap without hitting the miss
+  // limit — that means there could be more orders at higher IDs.
+  const truncated = id > PURCHASE_ORDER_SCAN_CAP && consecutiveMisses < CONSECUTIVE_MISS_LIMIT;
+  return { orders, truncated, strategy: "scan" };
 }
