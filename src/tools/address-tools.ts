@@ -128,9 +128,10 @@ export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
     name: "openxe-create-address",
     description:
       "Create a new address (customer, supplier, employee) in OpenXE. Uses Legacy API because REST v1 POST is broken. " +
+      "The ERP always assigns kundennummer and lieferantennummer itself — do NOT pass these fields; any value is dropped. " +
       "Field names are auto-corrected (e.g. fax->telefax, website->internetseite, bic->swift, straße->strasse, nested bankverbindung->flat fields). " +
       "Required: typ, name. " +
-      "Optional: vorname, firma, strasse, plz, ort, land, email, telefon, kundennummer (default 'NEU'), projekt, " +
+      "Optional: vorname, firma, strasse, plz, ort, land, email, telefon, projekt, " +
       "telefax, mobil, internetseite, ansprechpartner, abteilung, anschreiben (letter salutation, auto-mapped from anrede), titel, adresszusatz, " +
       "iban, swift, inhaber, bank, " +
       "zahlungszieltage, zahlungszieltageskonto, zahlungszielskonto, versandart, steuernummer, sonstiges. " +
@@ -187,14 +188,24 @@ export async function handleAddressTool(
   switch (toolName) {
     case "openxe-create-address": {
       const raw = args as Record<string, any>;
+      // Drop any kundennummer/lieferantennummer the caller may have smuggled
+      // in — the ERP must own number assignment. This is enforced at the
+      // handler (not just the schema) so it cannot be bypassed via catchall.
+      delete raw.kundennummer;
+      delete raw.lieferantennummer;
       const normalized = normalizeAddressFields(raw);
       const input = AddressCreateInput.parse(normalized);
-      // Auto-set lieferantennummer to "NEU" when creating a supplier without explicit number
-      if (input.rolle && /lieferant/i.test(input.rolle) && !input.lieferantennummer) {
-        input.lieferantennummer = "NEU";
-      }
       // Strip 'rolle' — it's a virtual/computed field, not a DB column. Sending it crashes the Legacy API (500).
-      const { rolle, ...payload } = input;
+      const { rolle, ...rest } = input;
+      const payload: Record<string, unknown> = {
+        ...rest,
+        // Always let the system assign the number. "NEU" is OpenXE's marker
+        // for auto-generate. Suppliers additionally need lieferantennummer.
+        kundennummer: "NEU",
+      };
+      if (rolle && /lieferant/i.test(rolle)) {
+        payload.lieferantennummer = "NEU";
+      }
       const result = await client.legacyPost("AdresseCreate", payload);
       return {
         content: [

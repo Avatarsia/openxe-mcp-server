@@ -38,28 +38,40 @@ export const DOCUMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-create-order",
     description:
-      "Create a sales order (Auftrag) via Legacy API. Required: adresse (customer ID), positionen (line items with nummer + menge). Optional: datum, projekt, zahlungsweise, lieferbedingung, freitext. Workflow: Create order -> openxe-convert-order-to-invoice (WeiterfuehrenAuftragZuRechnung) creates linked invoice + delivery note.",
+      "Create a sales order (Auftrag) via Legacy API. Required: adresse (customer ID), positionen (line items with nummer + menge; preis optional). " +
+      "Optional: datum, projekt, zahlungsweise, lieferbedingung, freitext, internebezeichnung, versandart, waehrung, lieferdatum. " +
+      "Do NOT pass kundennummer — the server resolves it automatically from the address. " +
+      "Do NOT include bezeichnung on positions (breaks PDF rendering; the system uses the article master data). " +
+      "If the address has no kundennummer set, the call fails with a clear error — fix the address via openxe-edit-address first. " +
+      "Workflow: create-order -> openxe-convert-order-to-invoice creates linked invoice + delivery note.",
     inputSchema: zodToJsonSchema(OrderCreateInput) as Record<string, unknown>,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-create-quote",
     description:
-      "Create a quote (Angebot) via Legacy API. Required: adresse, positionen. Optional: datum, gueltigbis.",
+      "Create a quote (Angebot) via Legacy API. Required: adresse (customer ID), positionen [{nummer, menge, preis?}]. Optional: datum, gueltigbis, freitext, internebezeichnung. " +
+      "Do NOT pass kundennummer (server resolves it from the address) and do NOT set bezeichnung on positions. " +
+      "Address must already have a kundennummer, otherwise the call fails with a clear error.",
     inputSchema: zodToJsonSchema(QuoteCreateInput) as Record<string, unknown>,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-create-invoice",
     description:
-      "Create a standalone invoice (Rechnung) via Legacy API. For order-linked invoices, prefer openxe-convert-order-to-invoice instead. Required: adresse, positionen (with preis on each item).",
+      "Create a standalone invoice (Rechnung) via Legacy API. For order-linked invoices, prefer openxe-convert-order-to-invoice instead. " +
+      "Required: adresse (customer ID), positionen [{nummer, menge, preis}] — preis is mandatory. Optional: datum, zahlungsweise, zahlungszieltage, freitext, internebezeichnung. " +
+      "Do NOT pass kundennummer (auto-resolved from the address) and do NOT set bezeichnung on positions. " +
+      "Address must have a kundennummer or the call fails.",
     inputSchema: zodToJsonSchema(InvoiceCreateInput) as Record<string, unknown>,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-create-credit-note",
     description:
-      "Create a credit note (Gutschrift). Required: adresse, positionen (with preis). Optional: rechnungid to link to invoice.",
+      "Create a credit note (Gutschrift). Required: adresse (customer ID), positionen [{nummer, menge, preis}]. Optional: rechnungid to link to an existing invoice. " +
+      "Do NOT pass kundennummer (auto-resolved from the address) and do NOT set bezeichnung on positions. " +
+      "Address must have a kundennummer.",
     inputSchema: zodToJsonSchema(CreditNoteCreateInput) as Record<
       string,
       unknown
@@ -186,10 +198,13 @@ const LEGACY_ACTION_MAP: Record<string, string> = {
  * Endpoints with `null` use flat JSON (no wrapper).
  */
 const LEGACY_WRAPPER_KEY: Record<string, string | null> = {
-  "openxe-create-order": "auftrag",
-  "openxe-create-quote": "angebot",
-  "openxe-create-invoice": "rechnung",
-  "openxe-create-credit-note": "gutschrift",
+  // Create endpoints send a FLAT payload (no entity wrapper). Adding a
+  // {"auftrag": {...}} wrapper causes OpenXE to throw 7499.
+  // Live-verified 2026-04-10 against OpenXE v1.12.
+  "openxe-create-order": null,
+  "openxe-create-quote": null,
+  "openxe-create-invoice": null,
+  "openxe-create-credit-note": null,
   "openxe-convert-quote-to-order": null,
   "openxe-convert-order-to-invoice": null,
   "openxe-release-order": null,
@@ -201,6 +216,13 @@ const LEGACY_WRAPPER_KEY: Record<string, string | null> = {
   "openxe-edit-delivery-note": "lieferschein",
   "openxe-edit-credit-memo": "gutschrift",
 };
+
+const CREATE_TOOLS_WITH_POSITIONS = new Set([
+  "openxe-create-order",
+  "openxe-create-quote",
+  "openxe-create-invoice",
+  "openxe-create-credit-note",
+]);
 
 const SCHEMA_MAP: Record<string, z.ZodSchema> = {
   "openxe-create-order": OrderCreateInput,
@@ -278,12 +300,53 @@ export async function handleDocumentTool(
 
   const input = schema.parse(args);
 
+  let data: Record<string, unknown> = input as Record<string, unknown>;
+
+  // Create endpoints (AuftragCreate, AngebotCreate, RechnungCreate,
+  // GutschriftCreate) need three transformations that were live-verified
+  // against OpenXE v1.12 on 2026-04-10:
+  //   1. Positions must be nested as artikelliste.position (not flat positionen)
+  //   2. kundennummer must be included (address ID alone is not enough)
+  //   3. No entity wrapper (handled via LEGACY_WRAPPER_KEY = null above)
+  // Any of these missing causes a server-side uncaught exception (error 7499).
+  if (CREATE_TOOLS_WITH_POSITIONS.has(toolName)) {
+    if (Array.isArray(data.positionen)) {
+      const { positionen, ...rest } = data;
+      data = { ...rest, artikelliste: { position: positionen } };
+    }
+
+    // Auto-populate kundennummer from the address, unless the caller already
+    // provided one. We fetch /v1/adressen/{id} and use its kundennummer.
+    if (!data.kundennummer && typeof data.adresse === "number") {
+      const addrResp = await client.get<any>(`/v1/adressen/${data.adresse}`);
+      // OpenXE wraps list/single responses as {data: {...}, pagination}, so
+      // the actual address object lives one level deeper.
+      const addr = (addrResp.data?.data ?? addrResp.data) as Record<string, unknown> | undefined;
+      const kn = addr?.kundennummer;
+      if (!kn || String(kn).trim() === "") {
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Cannot create document: address ${data.adresse} has no kundennummer. ` +
+                `OpenXE requires a customer number on the address before it can be used ` +
+                `on a sales document. Set one via openxe-edit-address and try again.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      data = { ...data, kundennummer: String(kn) };
+    }
+  }
+
   // Wrap data in entity key if required by this endpoint
   const wrapperKey = LEGACY_WRAPPER_KEY[toolName];
   const payload =
     wrapperKey != null
-      ? { [wrapperKey]: input as Record<string, unknown> }
-      : (input as Record<string, unknown>);
+      ? { [wrapperKey]: data }
+      : data;
 
   const result = await client.legacyPost(action, payload);
 

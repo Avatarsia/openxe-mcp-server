@@ -10,10 +10,16 @@ describe("Document Tools", () => {
     legacyPost: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
     getRaw: ReturnType<typeof vi.fn>;
+    get: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
-    mockClient = { legacyPost: vi.fn(), delete: vi.fn(), getRaw: vi.fn() };
+    mockClient = {
+      legacyPost: vi.fn(),
+      delete: vi.fn(),
+      getRaw: vi.fn(),
+      get: vi.fn(),
+    };
   });
 
   it("defines all expected document tools", () => {
@@ -35,6 +41,14 @@ describe("Document Tools", () => {
   });
 
   it("creates order via Legacy API AuftragCreate", async () => {
+    // AuftragCreate (live-verified format):
+    //  - FLAT payload, no {"auftrag": {...}} wrapper
+    //  - kundennummer is required; auto-looked-up from the address
+    //  - positions nested as artikelliste.position, not flat positionen
+    // Any deviation causes OpenXE to throw error 7499 (uncaught exception).
+    mockClient.get.mockResolvedValue({
+      data: { data: { id: "42", kundennummer: "K00042", name: "Test" } },
+    });
     mockClient.legacyPost.mockResolvedValue({
       success: true,
       data: { id: 100, belegnr: "AU-2026-0001" },
@@ -49,14 +63,37 @@ describe("Document Tools", () => {
       mockClient as unknown as OpenXEClient
     );
 
-    // AuftragCreate expects entity wrapper: {"auftrag": {...}}
+    expect(mockClient.get).toHaveBeenCalledWith("/v1/adressen/42");
     expect(mockClient.legacyPost).toHaveBeenCalledWith("AuftragCreate", {
-      auftrag: {
-        adresse: 42,
-        positionen: [{ nummer: 10, menge: 5, preis: 29.99 }],
+      adresse: 42,
+      kundennummer: "K00042",
+      artikelliste: {
+        position: [{ nummer: 10, menge: 5, preis: 29.99 }],
       },
     });
     expect(result.content[0].text).toContain("AU-2026-0001");
+  });
+
+  it("fails create-order when address has no kundennummer", async () => {
+    // Empty kundennummer on the address means OpenXE will reject the document.
+    // We catch this client-side with a helpful error instead of forwarding the
+    // opaque 7499 from the server.
+    mockClient.get.mockResolvedValue({
+      data: { data: { id: "2", kundennummer: "", name: "Ghost" } },
+    });
+
+    const result = await handleDocumentTool(
+      "openxe-create-order",
+      {
+        adresse: 2,
+        positionen: [{ nummer: 10, menge: 1, preis: 5 }],
+      },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("no kundennummer");
+    expect(mockClient.legacyPost).not.toHaveBeenCalled();
   });
 
   it("deletes draft invoice via REST v1 DELETE", async () => {

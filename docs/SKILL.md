@@ -109,10 +109,14 @@ All Belege support filters: `status`, `belegnr`, `kundennummer`, `datum_gte/lte`
 
 ### Create complete order flow (correct)
 ```
-1. openxe-create-address → kundennummer="NEU" (system auto-generates)
-2. openxe-create-order → artikelliste with nummer+menge+preis ONLY (no bezeichnung!)
-3. WeiterfuehrenAuftragZuRechnung → creates LINKED Rechnung + Lieferschein from Auftrag
-   (Do NOT create Lieferschein separately — Weiterführen handles the linkage)
+1. openxe-create-address → the system assigns kundennummer automatically.
+   NEVER pass kundennummer or lieferantennummer — any value is dropped.
+2. openxe-create-order → adresse (customer ID) + positionen: [{nummer, menge, preis}]
+   No bezeichnung in positions! The MCP layer also handles kundennummer lookup
+   and Legacy API shape transparently; you always send flat `positionen`.
+3. openxe-convert-order-to-invoice → creates LINKED Rechnung + Lieferschein in
+   one step (internally calls WeiterfuehrenAuftragZuRechnung).
+   Do NOT create a delivery note separately.
 ```
 
 ### Check stock for an article
@@ -140,10 +144,10 @@ All Belege support filters: `status`, `belegnr`, `kundennummer`, `datum_gte/lte`
 - **File upload uses `application/x-www-form-urlencoded`** — fields: dateiname, titel, file_content (NOT multipart)
 - **Tracking create needs 5 fields** — tracking + one of (internet/auftrag/lieferschein) + gewicht + anzahlpakete + versendet_am
 - **StechuhrStatusSet params** — cmd (kommen/gehen/pausestart/pausestop), user, adresse (NOT benutzer/status)
-- **Kundennummer="NEU"** — let system auto-generate, don't set manually
+- **Never pass kundennummer/lieferantennummer on create-address** — ERP assigns them; any manually-supplied value is silently dropped
 - **No bezeichnung in positions** — causes font size issues in PDFs, let system use article master data
-- **Use WeiterfuehrenAuftragZuRechnung** not LieferscheinCreate — creates linked documents with proper protocol entries
-- **artikelliste format** — {artikelliste: {position: [{nummer, menge, preis}]}} — note the nested structure
+- **Use openxe-convert-order-to-invoice** (internally calls WeiterfuehrenAuftragZuRechnung) — creates linked Rechnung + Lieferschein in one step
+- **Positions format on MCP layer is flat `positionen: [{nummer, menge, preis}]`** — the server internally wraps to `artikelliste.position` before posting to OpenXE Legacy API. You never write `artikelliste` yourself.
 
 ## Live Instance Compatibility (v1.12)
 
@@ -161,7 +165,7 @@ All Belege support filters: `status`, `belegnr`, `kundennummer`, `datum_gte/lte`
 
 **REST v1 PUT works for adressen** — contrary to source analysis, live instance accepts PUT updates
 
-**Order creation:** Requires kundennummer in payload (not address ID). Customer must have kundennummer set at creation time.
+**Order creation:** Pass only `adresse` (customer ID) — the MCP server automatically looks up the customer number via `/v1/adressen/{id}` and forwards it as `kundennummer` (required by OpenXE Legacy API). The address must already have a kundennummer set, otherwise create-order/quote/invoice/credit-note fails with a clear error. Brand-new customers get one the moment you create them via `openxe-create-address`.
 
 ## Permissions
 

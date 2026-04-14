@@ -49,9 +49,13 @@ export const AddressCreateInput = z.object({
   land: z.string().optional().describe("Country code (2-char ISO)"),
   email: z.string().optional().describe("Email address"),
   telefon: z.string().optional().describe("Phone number"),
-  kundennummer: z.string().default("NEU").describe("Customer number. Default 'NEU' = system auto-generates the next number."),
+  // NOTE: kundennummer and lieferantennummer are intentionally NOT exposed
+  // on create-address. The ERP (OpenXE) always assigns these numbers itself
+  // via its own counter — manually supplying one causes duplicate-key
+  // conflicts and breaks downstream reporting. The handler always forwards
+  // "NEU" so the system auto-generates. If an existing customer/supplier
+  // needs a specific number (e.g. a migration), use openxe-edit-address.
   projekt: z.number().int().optional().describe("Project ID"),
-  lieferantennummer: z.string().optional().describe("Supplier number — omit or use 'NEU' to let the system auto-generate. Only set explicitly if a specific number is required."),
   ustid: z.string().optional().describe("VAT ID (Umsatzsteuer-ID)"),
   rolle: z.string().optional().describe("Role: Kunde, Lieferant, or both"),
   waehrung: z.string().optional().describe("Default currency"),

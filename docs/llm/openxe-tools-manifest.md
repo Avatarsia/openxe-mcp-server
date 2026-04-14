@@ -54,9 +54,9 @@ permissions: ["list_delivery_addresses"]
 ## Master Data — Write
 
 ### tool: openxe-create-address
-description: Create address/customer via Legacy API (REST v1 POST is broken)
+description: Create address/customer/supplier via Legacy API (REST v1 POST is broken). The ERP assigns kundennummer and lieferantennummer automatically — do NOT pass these fields; any value is dropped by the handler.
 endpoint: POST /api/AdresseCreate
-input: {data: {typ: string, name: string, strasse?: string, plz?: string, ort?: string, land?: string, email?: string, telefon?: string, kundennummer?: string, projekt?: int, firma?: string, vorname?: string}}
+input: {typ: string, name: string, strasse?: string, plz?: string, ort?: string, land?: string, email?: string, telefon?: string, projekt?: int, firma?: string, vorname?: string, rolle?: "Kunde"|"Lieferant", ustid?: string}
 output: {success: bool, data: {id: int}}
 permissions: ["standard_adressecreate"]
 
@@ -145,18 +145,20 @@ permissions: ["standard_belegpdf"]
 ## Documents — Write (Legacy API)
 
 ### tool: openxe-create-order
-description: Create sales order via Legacy API
+description: Create sales order via Legacy API. Send flat `positionen` — the MCP layer transforms to the required artikelliste.position structure and injects the customer number from the address automatically.
 endpoint: POST /api/AuftragCreate
-input: {data: {adresse: int, datum?: date, projekt?: string, positionen: [{artikel: int|string, menge: number, preis?: number, bezeichnung?: string}], zahlungsweise?: string, lieferbedingung?: string, freitext?: string}}
+input: {adresse: int, positionen: [{nummer: int|string, menge: number, preis?: number}], datum?: date, projekt?: string, zahlungsweise?: string, lieferbedingung?: string, freitext?: string, internebezeichnung?: string, versandart?: string, waehrung?: string, lieferdatum?: date}
 output: {success: bool, data: {id: int, belegnr: string}}
 permissions: ["standard_auftragcreate"]
+notes: NEVER include bezeichnung on positions (breaks PDF rendering). NEVER pass kundennummer — the server resolves it from the address; the address must have one set or the call fails with a clear error.
 
 ### tool: openxe-create-quote
-description: Create quote via Legacy API
+description: Create quote via Legacy API. Same payload rules as create-order.
 endpoint: POST /api/AngebotCreate
-input: {data: {adresse: int, datum?: date, positionen: [{artikel: int, menge: number, preis?: number}], gueltigbis?: date}}
+input: {adresse: int, positionen: [{nummer: int|string, menge: number, preis?: number}], datum?: date, gueltigbis?: date, zahlungsweise?: string, lieferbedingung?: string, freitext?: string, internebezeichnung?: string}
 output: {success: bool, data: {id: int, belegnr: string}}
 permissions: ["standard_angebotcreate"]
+notes: Do not pass kundennummer or position bezeichnung — see create-order notes.
 
 ### tool: openxe-convert-quote-to-order
 description: Convert existing quote to sales order
@@ -166,11 +168,12 @@ output: {success: bool, data: {auftrag_id: int, belegnr: string}}
 permissions: ["standard_angebotzuauftrag"]
 
 ### tool: openxe-create-invoice
-description: Create invoice via Legacy API
+description: Create standalone invoice via Legacy API. Prefer openxe-convert-order-to-invoice for order-linked invoices.
 endpoint: POST /api/RechnungCreate
-input: {data: {adresse: int, datum?: date, positionen: [{artikel: int, menge: number, preis: number}]}}
+input: {adresse: int, positionen: [{nummer: int|string, menge: number, preis: number}], datum?: date, projekt?: string, zahlungsweise?: string, zahlungszieltage?: string, freitext?: string, internebezeichnung?: string}
 output: {success: bool, data: {id: int, belegnr: string}}
 permissions: ["standard_rechnungcreate"]
+notes: preis is mandatory on each position. Do not pass kundennummer or position bezeichnung — see create-order notes.
 
 ### tool: openxe-convert-order-to-invoice
 description: Convert sales order to invoice
@@ -208,19 +211,13 @@ output: 204 No Content
 permissions: ["delete_invoice"]
 notes: Only works on drafts. Cascades to positions and protocol entries.
 
-### tool: openxe-create-delivery-note
-description: Create delivery note
-endpoint: POST /api/LieferscheinCreate
-input: {data: {adresse: int, auftragid?: int, positionen: [{artikel: int, menge: number}]}}
-output: {success: bool, data: {id: int, belegnr: string}}
-permissions: ["standard_lieferscheincreate"]
-
 ### tool: openxe-create-credit-note
 description: Create credit note/memo
 endpoint: POST /api/GutschriftCreate
-input: {data: {adresse: int, rechnungid?: int, positionen: [{artikel: int, menge: number, preis: number}]}}
+input: {adresse: int, positionen: [{nummer: int|string, menge: number, preis: number}], rechnungid?: int}
 output: {success: bool, data: {id: int}}
 permissions: ["standard_gutschriftcreate"]
+notes: No standalone create-delivery-note tool — use openxe-convert-order-to-invoice, which creates the linked Rechnung + Lieferschein in one step via WeiterfuehrenAuftragZuRechnung. Same kundennummer/bezeichnung rules as create-order.
 
 ---
 ## Tracking & Shipping

@@ -52,6 +52,30 @@ describe("Address Tools", () => {
     expect(result.content[0].text).toContain("42");
   });
 
+  it("forces kundennummer/lieferantennummer to 'NEU' even if the caller supplies one", async () => {
+    // The ERP owns number assignment — any manual value from the LLM must
+    // be dropped to avoid duplicate-key conflicts and broken reporting.
+    mockClient.legacyPost.mockResolvedValue({ success: true, data: { id: 99 } });
+
+    await handleAddressTool(
+      "openxe-create-address",
+      {
+        typ: "firma",
+        name: "Supplier AG",
+        rolle: "Lieferant",
+        kundennummer: "K-HIJACKED-12345",
+        lieferantennummer: "L-HIJACKED-999",
+      },
+      mockClient as unknown as OpenXEClient
+    );
+
+    const [, payload] = mockClient.legacyPost.mock.calls[0];
+    expect(payload.kundennummer).toBe("NEU");
+    expect(payload.lieferantennummer).toBe("NEU");
+    // 'rolle' is stripped because it is a virtual field
+    expect(payload.rolle).toBeUndefined();
+  });
+
   it("edits address via REST v1 PUT first", async () => {
     mockClient.put.mockResolvedValue({
       data: { id: 42, email: "new@acme.de" },
