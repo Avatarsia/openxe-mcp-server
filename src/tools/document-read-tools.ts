@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
-import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList, FilteredListResult } from "../utils/field-filter.js";
-import { applyAggregate, AggregateOp, applySort, applyLimit, applyFields, parseZeitraum, formatAsTable, formatAsCsv, formatAsIds, applyWhere, applyStatusPreset } from "../utils/smart-filters.js";
+import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList, FilteredListResult, FETCH_ALL_SAFETY_CAP } from "../utils/field-filter.js";
+import { applyAggregate, AggregateOp, applySort, applyLimit, applyFields, parseZeitraum, formatAsTable, formatAsCsv, formatAsCsvPositions, formatAsIds, applyWhere, applyStatusPreset, filterArrayElementsByWhere, WhereClause } from "../utils/smart-filters.js";
 
 // --- Aggregate schema ---
 
@@ -59,7 +59,7 @@ const ListFilters = z.object({
   limit: z.number().int().positive().max(200).optional().describe("Maximale Anzahl Ergebnisse"),
   fields: z.array(z.string()).optional().describe("Nur diese Felder zurueckgeben (z.B. ['name','plz','kundennummer'])"),
   aggregate: AggregateSchema,
-  format: z.enum(["json", "table", "csv", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), ids (nur IDs)"),
+  format: z.enum(["json", "table", "csv", "csv-positions", "ids"]).optional().default("json").describe("Ausgabeformat: json (Standard), table (kompakte Tabelle), csv (Semikolon-getrennt), csv-positions (eine Zeile pro Belegposition, mit Kundennummer/Belegnr/Datum als Prefix), ids (nur IDs)"),
   where: whereSchema,
 });
 
@@ -203,6 +203,48 @@ function unwrapList(rawData: unknown): any[] {
   return [];
 }
 
+/** True when any where-key targets a nested positions field. */
+function hasPositionsFilter(where: WhereClause | undefined): boolean {
+  if (!where) return false;
+  return Object.keys(where).some(k => k.startsWith("positionen."));
+}
+
+/**
+ * Enrich each position with a computed `gesamtpreis` field (menge * preis).
+ * Lieferschein positions have no `preis` and end up with an empty string.
+ * Mutates the records in place — only used right before CSV export.
+ */
+function enrichPositionsWithGesamtpreis(records: any[]): void {
+  for (const rec of records) {
+    if (!Array.isArray(rec?.positionen)) continue;
+    for (const pos of rec.positionen) {
+      if (pos == null) continue;
+      if (pos.preis === undefined || pos.preis === null || pos.preis === "") {
+        pos.gesamtpreis = "";
+        continue;
+      }
+      const menge = parseFloat(pos.menge);
+      const preis = parseFloat(pos.preis);
+      if (isNaN(menge) || isNaN(preis)) {
+        pos.gesamtpreis = "";
+      } else {
+        pos.gesamtpreis = (Math.round(menge * preis * 100) / 100).toFixed(2);
+      }
+    }
+  }
+}
+
+const CSV_POSITIONS_HEADER_FIELDS = ["kundennummer", "belegnr", "datum"];
+const CSV_POSITIONS_POSITION_FIELDS = [
+  "nummer",
+  "bezeichnung",
+  "beschreibung",
+  "menge",
+  "einheit",
+  "preis",
+  "gesamtpreis",
+];
+
 // --- Handler ---
 
 export async function handleDocumentReadTool(
@@ -227,12 +269,18 @@ export async function handleDocumentReadTool(
     if (filters.datum_gte) params.datum_gte = filters.datum_gte;
     if (filters.datum_lte) params.datum_lte = filters.datum_lte;
 
+    // Positions are pulled in whenever a where-clause references them OR
+    // the caller asked for the csv-positions output format.
+    const needsPositions =
+      filters.format === "csv-positions" || hasPositionsFilter(filters.where);
+    if (needsPositions) params.include = "positionen";
+
     const slimFields = LIST_TOOL_SLIM[toolName];
     const result = await fetchFilteredList(client, `/v1/belege/${listPath}`, params, {
       slimFields: [...slimFields],
       includeDeleted: filters.include_deleted,
-      skipSlim: !!(filters.where || filters.fields),
-      fetchAll: !!filters.where,
+      skipSlim: !!(filters.where || filters.fields || needsPositions),
+      fetchAll: !!(filters.where || needsPositions),
     });
 
     // applyWhere -- on full data (before slim)
@@ -266,10 +314,44 @@ export async function handleDocumentReadTool(
       data = applyLimit(data, filters.limit);
     }
 
+    // csv-positions runs BEFORE slim/fields projection so that the
+    // `positionen` array is still present on each record.
+    if (filters.format === "csv-positions") {
+      // Reduce each beleg's `positionen` array to those entries that satisfy
+      // the positionen.*-where-clauses themselves. Without this the export
+      // would include every position of a matching beleg, not the targeted
+      // ones (e.g. when filtering by positionen.nummer).
+      let csvData = data;
+      if (filters.where && hasPositionsFilter(filters.where)) {
+        csvData = data.map(beleg => {
+          if (!Array.isArray(beleg?.positionen)) return beleg;
+          return {
+            ...beleg,
+            positionen: filterArrayElementsByWhere(beleg.positionen, filters.where!, "positionen"),
+          };
+        });
+      }
+      enrichPositionsWithGesamtpreis(csvData);
+      const csv = formatAsCsvPositions(
+        csvData,
+        "positionen",
+        CSV_POSITIONS_HEADER_FIELDS,
+        CSV_POSITIONS_POSITION_FIELDS,
+      );
+      // Surface truncation as a trailing warning, matching the format used by
+      // report-tools.ts. Appending (not prepending) keeps the CSV header intact
+      // for downstream parsers (Excel, pandas) that don't recognise `#` as a
+      // comment marker.
+      const output = result.meta.truncated
+        ? `${csv}\n\nWARNUNG: Safety-Cap von ${FETCH_ALL_SAFETY_CAP} Belegen erreicht — Ergebnis ist eine Untergrenze.`
+        : csv;
+      return { content: [{ type: "text", text: output }] };
+    }
+
     // Slim or fields projection
     if (filters.fields && filters.fields.length > 0) {
       data = applyFields(data, filters.fields);
-    } else if (filters.where || filters.fields) {
+    } else if (filters.where || filters.fields || needsPositions) {
       // slim was skipped in fetchFilteredList, apply it now
       data = applySlimMode(data, [...slimFields]) as any[];
     }

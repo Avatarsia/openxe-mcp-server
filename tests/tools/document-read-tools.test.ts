@@ -232,6 +232,116 @@ describe("Document Read Tools", () => {
     expect(parsed.data).toHaveLength(2);
   });
 
+  // --- csv-positions: per-position filter + truncation warning ---
+
+  describe("csv-positions format", () => {
+    it("reduces positionen to entries matching positionen.*-where clauses", async () => {
+      mockPaginatedGet([
+        {
+          id: 1,
+          belegnr: "RE-001",
+          kundennummer: "K1",
+          datum: "2026-01-01",
+          positionen: [
+            { nummer: "ART-001", bezeichnung: "Match", menge: "2", preis: "10" },
+            { nummer: "ART-999", bezeichnung: "Other", menge: "1", preis: "5" },
+          ],
+        },
+        {
+          id: 2,
+          belegnr: "RE-002",
+          kundennummer: "K2",
+          datum: "2026-01-02",
+          positionen: [
+            { nummer: "ART-001", bezeichnung: "Match2", menge: "3", preis: "20" },
+          ],
+        },
+      ]);
+
+      const result = await handleDocumentReadTool(
+        "openxe-list-invoices",
+        {
+          format: "csv-positions",
+          where: { "positionen.nummer": { containsAny: ["ART-001"] } },
+        },
+        mockClient as unknown as OpenXEClient
+      );
+
+      const csv = result.content[0].text;
+      const lines = csv.split("\n");
+      // header + 2 rows (only matching positions)
+      expect(lines).toHaveLength(3);
+      expect(lines[0]).toContain("nummer");
+      expect(csv).toContain("ART-001");
+      expect(csv).not.toContain("ART-999");
+      expect(csv).not.toContain("Other");
+    });
+
+    it("exports all positions when no positionen.*-where clauses are given", async () => {
+      mockPaginatedGet([
+        {
+          id: 1,
+          belegnr: "RE-001",
+          kundennummer: "K1",
+          datum: "2026-01-01",
+          positionen: [
+            { nummer: "ART-001", bezeichnung: "A", menge: "1", preis: "10" },
+            { nummer: "ART-002", bezeichnung: "B", menge: "1", preis: "20" },
+          ],
+        },
+      ]);
+
+      const result = await handleDocumentReadTool(
+        "openxe-list-invoices",
+        { format: "csv-positions" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      const csv = result.content[0].text;
+      const lines = csv.split("\n");
+      expect(lines).toHaveLength(3); // header + 2 positions
+      expect(csv).toContain("ART-001");
+      expect(csv).toContain("ART-002");
+    });
+
+    it("appends a trailing WARNUNG line when the fetch was truncated", async () => {
+      // Simulate a fetchAll run that hits FETCH_ALL_SAFETY_CAP (10000).
+      // Page 1 returns 10000 items, subsequent pages are never reached because
+      // the safety-cap break triggers first. This sets meta.truncated=true.
+      const bulk = Array.from({ length: 10000 }, (_, i) => ({
+        id: i + 1,
+        belegnr: `RE-${i + 1}`,
+        kundennummer: "K1",
+        datum: "2026-01-01",
+        positionen: [{ nummer: "ART-X", bezeichnung: "X", menge: "1", preis: "1" }],
+      }));
+      mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
+        const page = parseInt(params?.page ?? "1", 10);
+        if (page === 1) {
+          return Promise.resolve({ data: bulk, pagination: undefined });
+        }
+        return Promise.resolve({ data: [], pagination: undefined });
+      });
+
+      const result = await handleDocumentReadTool(
+        "openxe-list-invoices",
+        {
+          format: "csv-positions",
+          // a where-clause is required to trigger fetchAll; use a match-all one
+          where: { "positionen.nummer": { containsAny: ["ART-X"] } },
+        },
+        mockClient as unknown as OpenXEClient
+      );
+
+      const csv = result.content[0].text;
+      // Warning is appended after the CSV body so stricter CSV parsers
+      // (Excel, pandas default) still see a clean header as line 1.
+      const firstLine = csv.split("\n", 1)[0];
+      expect(firstLine.startsWith("#")).toBe(false);
+      expect(csv).toMatch(/\n\nWARNUNG: Safety-Cap .* 10000 /);
+    });
+  });
+
   it("ignores status_preset for entities without presets (delivery-notes)", async () => {
     mockPaginatedGet([
       { id: 1, belegnr: "LS-001", status: "freigegeben", name: "A", kundennummer: "K1" },

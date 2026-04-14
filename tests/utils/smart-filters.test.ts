@@ -136,6 +136,303 @@ describe("applyWhere", () => {
     const result = applyWhere(sampleRecords, { nonexistent: { empty: true } });
     expect(result).toHaveLength(5);
   });
+
+  // --- in operator ---
+  it("in: matches any of a list of values (strings)", () => {
+    const result = applyWhere(sampleRecords, { city: { in: ["Berlin", "Hamburg"] } });
+    expect(result).toHaveLength(3);
+    expect(result.map(r => r.id)).toEqual([1, 3, 4]);
+  });
+
+  it("in: matches numeric values as strings", () => {
+    const result = applyWhere(sampleRecords, { id: { in: [2, 4] } });
+    expect(result).toHaveLength(2);
+    expect(result.map(r => r.id)).toEqual([2, 4]);
+  });
+
+  it("in: case-insensitive string match", () => {
+    const result = applyWhere(sampleRecords, { city: { in: ["BERLIN"] } });
+    expect(result).toHaveLength(2);
+    expect(result.map(r => r.id)).toEqual([1, 3]);
+  });
+
+  it("in: empty array matches nothing", () => {
+    const result = applyWhere(sampleRecords, { city: { in: [] } });
+    expect(result).toHaveLength(0);
+  });
+});
+
+// --- Dot-notation + array-aware where operators ---
+
+describe("applyWhere with dot-notation and array fields", () => {
+  const invoicesWithPositions = [
+    {
+      id: 1,
+      belegnr: "RE-001",
+      kundennummer: "10001",
+      positionen: [
+        { nummer: "ART-001", bezeichnung: "Schraube M8", menge: "10" },
+        { nummer: "ART-002", bezeichnung: "Mutter M8", menge: "10" },
+      ],
+    },
+    {
+      id: 2,
+      belegnr: "RE-002",
+      kundennummer: "10002",
+      positionen: [
+        { nummer: "ART-003", bezeichnung: "Unterlegscheibe", menge: "50" },
+      ],
+    },
+    {
+      id: 3,
+      belegnr: "RE-003",
+      kundennummer: "10003",
+      positionen: [
+        { nummer: "ART-001", bezeichnung: "Schraube M8 (individuell)", menge: "5" },
+        { nummer: "ART-004", bezeichnung: "Gewindestange", menge: "2" },
+      ],
+    },
+    {
+      id: 4,
+      belegnr: "RE-004",
+      kundennummer: "10004",
+      positionen: [],
+    },
+    {
+      id: 5,
+      belegnr: "RE-005",
+      kundennummer: "10005",
+      // no positionen key at all
+    },
+  ];
+
+  // --- contains on dot-notation array field ---
+  it("contains on positionen.nummer matches rows where any position contains the value", () => {
+    const result = applyWhere(invoicesWithPositions, { "positionen.nummer": { contains: "ART-001" } });
+    expect(result.map(r => r.id)).toEqual([1, 3]);
+  });
+
+  it("contains on positionen.bezeichnung matches substring in any position", () => {
+    const result = applyWhere(invoicesWithPositions, { "positionen.bezeichnung": { contains: "Schraube" } });
+    expect(result.map(r => r.id)).toEqual([1, 3]);
+  });
+
+  // --- containsAny ---
+  it("containsAny: matches when at least one value is present in the array field", () => {
+    const result = applyWhere(invoicesWithPositions, {
+      "positionen.nummer": { containsAny: ["ART-002", "ART-004"] },
+    });
+    expect(result.map(r => r.id)).toEqual([1, 3]);
+  });
+
+  it("containsAny: case-insensitive comparison", () => {
+    const result = applyWhere(invoicesWithPositions, {
+      "positionen.nummer": { containsAny: ["art-001"] },
+    });
+    expect(result.map(r => r.id)).toEqual([1, 3]);
+  });
+
+  it("containsAny: returns nothing when none of the values match", () => {
+    const result = applyWhere(invoicesWithPositions, {
+      "positionen.nummer": { containsAny: ["ART-999"] },
+    });
+    expect(result).toHaveLength(0);
+  });
+
+  it("containsAny: empty array matches nothing", () => {
+    const result = applyWhere(invoicesWithPositions, {
+      "positionen.nummer": { containsAny: [] },
+    });
+    expect(result).toHaveLength(0);
+  });
+
+  // --- containsAll ---
+  it("containsAll: matches only records where ALL values are present in the array field", () => {
+    const result = applyWhere(invoicesWithPositions, {
+      "positionen.nummer": { containsAll: ["ART-001", "ART-002"] },
+    });
+    expect(result.map(r => r.id)).toEqual([1]);
+  });
+
+  it("containsAll: case-insensitive comparison", () => {
+    const result = applyWhere(invoicesWithPositions, {
+      "positionen.nummer": { containsAll: ["art-001", "ART-002"] },
+    });
+    expect(result.map(r => r.id)).toEqual([1]);
+  });
+
+  it("containsAll: record with only one of two required values does not match", () => {
+    const result = applyWhere(invoicesWithPositions, {
+      "positionen.nummer": { containsAll: ["ART-001", "ART-004"] },
+    });
+    expect(result.map(r => r.id)).toEqual([3]);
+  });
+
+  it("containsAll: empty array matches all records (vacuously true)", () => {
+    const result = applyWhere(invoicesWithPositions, {
+      "positionen.nummer": { containsAll: [] },
+    });
+    expect(result).toHaveLength(5);
+  });
+
+  // --- edge cases ---
+  it("empty positionen array never matches containsAny", () => {
+    const result = applyWhere(invoicesWithPositions, {
+      "positionen.nummer": { containsAny: ["ART-001"] },
+    });
+    expect(result.find(r => r.id === 4)).toBeUndefined();
+  });
+
+  it("missing positionen key is treated as empty array, never matches containsAny", () => {
+    const result = applyWhere(invoicesWithPositions, {
+      "positionen.nummer": { containsAny: ["ART-001"] },
+    });
+    expect(result.find(r => r.id === 5)).toBeUndefined();
+  });
+
+  // --- combined filters ---
+  it("combines positions filter with header filter (AND)", () => {
+    const result = applyWhere(invoicesWithPositions, {
+      "positionen.nummer": { containsAny: ["ART-001"] },
+      kundennummer: { equals: "10001" },
+    });
+    expect(result.map(r => r.id)).toEqual([1]);
+  });
+
+  it("supports 'in' operator on dot-notation field", () => {
+    const result = applyWhere(invoicesWithPositions, {
+      "positionen.nummer": { in: ["ART-003", "ART-004"] },
+    });
+    // contains any of [ART-003, ART-004]
+    expect(result.map(r => r.id)).toEqual([2, 3]);
+  });
+
+  // --- element-wise AND on correlated array-path where-clauses ---
+  describe("element-wise AND (elem-match) on positionen.*", () => {
+    const records = [
+      {
+        id: 1,
+        belegnr: "RE-100",
+        // Two positions where NO single position satisfies both clauses:
+        // ART-001 has menge 3, ART-002 has menge 7. The old implementation
+        // incorrectly matched this record because it flattened per-field.
+        positionen: [
+          { nummer: "ART-001", menge: "3" },
+          { nummer: "ART-002", menge: "7" },
+        ],
+      },
+      {
+        id: 2,
+        belegnr: "RE-101",
+        // One position satisfies both clauses simultaneously.
+        positionen: [
+          { nummer: "ART-001", menge: "10" },
+          { nummer: "ART-999", menge: "1" },
+        ],
+      },
+      {
+        id: 3,
+        belegnr: "RE-102",
+        status: "active",
+        positionen: [
+          { nummer: "ART-001", menge: "2" },
+        ],
+      },
+    ];
+
+    it("does NOT produce a false positive when no single position satisfies both clauses", () => {
+      const result = applyWhere(records, {
+        "positionen.nummer": { equals: "ART-001" },
+        "positionen.menge":  { gt: 5 },
+      });
+      // Old buggy behavior would have included id:1. Only id:2 has ONE
+      // position fulfilling both conditions at the same time.
+      expect(result.map(r => r.id)).toEqual([2]);
+    });
+
+    it("element-wise AND applies when 2+ clauses share an array prefix", () => {
+      const result = applyWhere(records, {
+        "positionen.nummer": { equals: "ART-001" },
+        "positionen.menge":  { gte: 2, lte: 5 },
+      });
+      // id:1 → ART-001 has menge 3 (within 2..5) → match
+      // id:2 → ART-001 has menge 10 (outside) → no elem match
+      // id:3 → ART-001 has menge 2 (within) → match
+      expect(result.map(r => r.id)).toEqual([1, 3]);
+    });
+
+    it("single clause on array-prefix keeps any-element-matches semantics", () => {
+      // Only one condition referencing positionen.* → behaves as before.
+      const result = applyWhere(records, {
+        "positionen.menge": { gt: 5 },
+      });
+      // id:1 has a position with menge 7, id:2 with menge 10 → both match.
+      expect(result.map(r => r.id)).toEqual([1, 2]);
+    });
+
+    it("mixes scalar and array-based clauses with AND", () => {
+      const result = applyWhere(records, {
+        status: { equals: "active" },
+        "positionen.nummer": { equals: "ART-001" },
+        "positionen.menge":  { lte: 5 },
+      });
+      // Only id:3 has status=active AND a position with ART-001 & menge<=5.
+      expect(result.map(r => r.id)).toEqual([3]);
+    });
+
+    it("different array prefixes form independent elem-match groups", () => {
+      const multi = [
+        {
+          id: 1,
+          positionen: [{ nummer: "A", menge: "1" }],
+          protokoll:  [{ typ: "mail", datum: "2024-01-01" }],
+        },
+        {
+          id: 2,
+          positionen: [{ nummer: "A", menge: "5" }],
+          protokoll:  [{ typ: "anruf", datum: "2024-02-01" }],
+        },
+      ];
+      const result = applyWhere(multi, {
+        "positionen.nummer": { equals: "A" },
+        "positionen.menge":  { gte: 3 },
+        "protokoll.typ":     { equals: "anruf" },
+      });
+      // id:1 fails protokoll.typ; id:2 passes both groups.
+      expect(result.map(r => r.id)).toEqual([2]);
+    });
+
+    // --- degenerate shapes for the array-prefix on multi-clause where ---
+    it("does not match records where positionen is missing, null, or a non-array object (multi-clause)", () => {
+      // All three variants share the same multi-clause where that expects
+      // concrete values on positionen.* — none of the records has an array,
+      // so the elem-match branch is never entered; the clauses fall through
+      // to the scalar branch, resolvePath returns undefined, and
+      // evalConditions must reject.
+      const degenerate = [
+        { id: 10, belegnr: "RE-MISS" },                     // positionen missing
+        { id: 11, belegnr: "RE-NULL", positionen: null },    // positionen null
+        { id: 12, belegnr: "RE-OBJ",  positionen: {} },      // positionen is an object, not an array
+      ];
+      const result = applyWhere(degenerate, {
+        "positionen.nummer": { equals: "ART-001" },
+        "positionen.menge":  { gt: 5 },
+      });
+      expect(result).toEqual([]);
+    });
+
+    it("does not match a record with an empty positionen array on multi-clause where", () => {
+      // arr.some(...) over [] is false → record must be filtered out.
+      const empty = [
+        { id: 20, belegnr: "RE-EMPTY", positionen: [] },
+      ];
+      const result = applyWhere(empty, {
+        "positionen.nummer": { equals: "ART-001" },
+        "positionen.menge":  { gt: 5 },
+      });
+      expect(result).toEqual([]);
+    });
+  });
 });
 
 describe("applySort", () => {
