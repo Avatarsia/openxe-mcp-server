@@ -6,16 +6,22 @@ import {
   handleRouter,
   ACTION_REGISTRY,
   CATEGORY_ORDER,
+  resetDiscoverCallLog,
+  forgetDiscoverCallLog,
 } from "../../src/tools/router.js";
 import { OpenXEClient } from "../../src/client/openxe-client.js";
 
 describe("Router Tools", () => {
+  beforeEach(() => {
+    resetDiscoverCallLog();
+  });
+
   // --- Discover ---
 
   describe("openxe-discover", () => {
     it("has correct tool definition", () => {
       expect(DISCOVER_TOOL_DEFINITION.name).toBe("openxe-discover");
-      expect(DISCOVER_TOOL_DEFINITION.description).toContain("verfuegbare");
+      expect(DISCOVER_TOOL_DEFINITION.description).toContain("available");
     });
 
     it("returns all categories when no filter", () => {
@@ -66,11 +72,88 @@ describe("Router Tools", () => {
       expect(text).not.toContain("=== Stammdaten ===");
     });
 
+    it("returns error on 2nd call within window", () => {
+      handleDiscover({}); // 1st call — full
+      const result = handleDiscover({}); // 2nd call — error
+      const text = result.content[0].text;
+
+      expect(result.isError).toBe(true);
+      expect(text).toContain("openxe");
+      expect(text).not.toContain("=== Stammdaten ===");
+    });
+
+    it("returns minimal error on 4th+ call within window", () => {
+      handleDiscover({});
+      handleDiscover({});
+      handleDiscover({});
+      const result = handleDiscover({}); // 4th call
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("rate limit");
+    });
+
     it("includes usage hint", () => {
       const result = handleDiscover({});
       const text = result.content[0].text;
       expect(text).toContain("openxe");
       expect(text).toContain("action=");
+    });
+
+    it("does NOT throttle when category filter differs", () => {
+      // Three calls with different category filters within the window — each
+      // should return the full listing because they live in separate buckets.
+      const r1 = handleDiscover({});
+      const r2 = handleDiscover({ category: "belege" });
+      const r3 = handleDiscover({ category: "stammdaten" });
+
+      expect(r1.isError).toBeUndefined();
+      expect(r2.isError).toBeUndefined();
+      expect(r3.isError).toBeUndefined();
+      expect(r1.content[0].text).toContain("=== Stammdaten ===");
+      expect(r2.content[0].text).toContain("=== Belege ===");
+      expect(r3.content[0].text).toContain("=== Stammdaten ===");
+    });
+
+    it("throttles only the repeated signature, not siblings", () => {
+      // Hammer 'belege' four times — 1 full, 2+3 short reminder, 4 STOP.
+      const r1 = handleDiscover({ category: "belege" });
+      const r2 = handleDiscover({ category: "belege" });
+      const r3 = handleDiscover({ category: "belege" });
+      const r4 = handleDiscover({ category: "belege" });
+
+      expect(r1.isError).toBeUndefined();
+      expect(r2.isError).toBe(true);
+      expect(r3.isError).toBe(true);
+      expect(r4.isError).toBe(true);
+      expect(r4.content[0].text).toContain("rate limit");
+
+      // A different signature in the same (default) session is unaffected.
+      const rOther = handleDiscover({ category: "stammdaten" });
+      expect(rOther.isError).toBeUndefined();
+      expect(rOther.content[0].text).toContain("=== Stammdaten ===");
+    });
+
+    it("forgetDiscoverCallLog removes only the given session's entries", () => {
+      // Prime two sessions plus the default bucket.
+      handleDiscover({}, "session-A");
+      handleDiscover({ category: "belege" }, "session-A");
+      handleDiscover({}, "session-B");
+      handleDiscover({}); // default session
+
+      // Forget only session-A — both of its signature buckets must be gone,
+      // so a fresh call returns Full again.
+      forgetDiscoverCallLog("session-A");
+
+      const aFresh = handleDiscover({}, "session-A");
+      const aBelegeFresh = handleDiscover({ category: "belege" }, "session-A");
+      expect(aFresh.isError).toBeUndefined();
+      expect(aBelegeFresh.isError).toBeUndefined();
+
+      // session-B and default stay throttled — they were not forgotten.
+      const bSecond = handleDiscover({}, "session-B");
+      const defaultSecond = handleDiscover({});
+      expect(bSecond.isError).toBe(true);
+      expect(defaultSecond.isError).toBe(true);
     });
 
     it("lists all registered actions", () => {
@@ -170,6 +253,12 @@ describe("Router Tools", () => {
     });
 
     it("dispatches create-order to document handler", async () => {
+      // handleDocumentTool looks up the kundennummer for the address before
+      // calling AuftragCreate — the default get mock returns [] which lacks
+      // a kundennummer, so this test needs its own address mock.
+      mockClient.get.mockResolvedValue({
+        data: { data: { id: "1", kundennummer: "K00001", name: "Router Test" } },
+      });
       mockClient.legacyPost.mockResolvedValue({
         data: { id: 99 },
         success: true,

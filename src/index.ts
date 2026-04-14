@@ -57,6 +57,7 @@ import {
   ROUTER_TOOL_DEFINITION,
   handleDiscover,
   handleRouter,
+  forgetDiscoverCallLog,
 } from "./tools/router.js";
 import {
   BUSINESS_QUERY_TOOL_DEFINITION,
@@ -95,6 +96,42 @@ function auditLog(toolName: string, args: Record<string, unknown>): void {
   console.error(`[AUDIT] ${timestamp} tool=${toolName} args=${JSON.stringify(safeArgs)}`);
 }
 
+// ---------------------------------------------------------------------------
+// Mode-specific instructions
+// ---------------------------------------------------------------------------
+// Kept deliberately short. Tool-specific rules (parameter names, field-name
+// quirks, workflow ordering) belong in each tool's `description`, not here.
+// Official Anthropic example servers use empty `instructions` entirely; we
+// keep a brief server-wide context block as guidance for small local LLMs.
+function buildInstructions(mode: "router" | "full" | "readonly"): string {
+  if (mode === "router") {
+    return [
+      "OpenXE ERP connector — router mode. Two meta-tools expose ~69 ERP operations.",
+      "",
+      "Workflow: first call `openxe-discover` to find the right action, then call `openxe` with {action, params}.",
+      "",
+      "Core rules:",
+      "- Never pass kundennummer or lieferantennummer on create-address — the ERP assigns them.",
+      "- For create-order / create-quote / create-invoice / create-credit-note: pass only `adresse` (numeric customer ID). kundennummer is auto-resolved. Positions: [{nummer, menge, preis}] — no `bezeichnung`.",
+      "- Date format: YYYY-MM-DD. Amounts: decimal with dot.",
+      "- On empty results, suggest alternative filters instead of retrying blindly.",
+      "- Reply in the user's language.",
+    ].join("\n");
+  }
+  if (mode === "readonly") {
+    return [
+      "OpenXE ERP connector — read-only mode. All write operations are disabled.",
+      "Use list-*/get-*/dashboard/report-*/business-query tools. Each tool description contains its parameters and constraints.",
+    ].join("\n");
+  }
+  // full mode
+  return [
+    "OpenXE ERP connector — full mode (~69 tools).",
+    "Each tool description contains its exact parameters, required fields, and gotchas. Read descriptions before guessing.",
+    "Server-wide rules: dates YYYY-MM-DD, amounts decimal with dot. Never pass kundennummer/lieferantennummer (ERP assigns them). No `bezeichnung` on Beleg positions.",
+  ].join("\n");
+}
+
 async function main() {
   const config = loadConfig();
   const client = new OpenXEClient(config);
@@ -109,130 +146,7 @@ async function main() {
         resources: {},
         tools: {},
       },
-      instructions: [
-        "Du bist mit einem OpenXE ERP-System verbunden. Hier sind die wichtigsten Regeln:",
-        "",
-        "## Erste Schritte",
-        '- Rufe zuerst "openxe-discover" auf um alle verfuegbaren Aktionen zu sehen.',
-        '- Nutze "openxe" mit action=<name> und params={...} um Aktionen auszufuehren.',
-        "",
-        "## Effiziente Abfragen",
-        "- Listen geben standardmaessig nur Schluesselfelder zurueck (Slim Mode).",
-        "- Fuer Details eines Eintrags nutze die get-* Aktionen mit der ID.",
-        "- Nutze Smart Filter fuer gezielte Abfragen:",
-        '  - where: {plz: {startsWith: "2"}, name: {contains: "Mueller"}}',
-        '  - sort_field + sort_order: Sortierung (z.B. "gesamtsumme" + "desc")',
-        "  - limit: Maximale Ergebnisse (z.B. 5 fuer Top-5)",
-        '  - fields: Nur bestimmte Felder (z.B. ["name", "plz", "ort"])',
-        '  - format: "table" fuer kompakte Darstellung, "csv" fuer Export',
-        '  - zeitraum: "dieser-monat", "letzter-monat", "Q3-2025", "oktober-2025"',
-        '  - status_preset: "offen", "unbezahlt", "ueberfaellig"',
-        '  - aggregate: "count" oder {sum: "gesamtsumme"} oder {groupBy: "status"}',
-        "",
-        "## Workflows",
-        '- Kunde anlegen: action=create-address, kundennummer="NEU" (System vergibt automatisch)',
-        "- Auftrag erstellen: action=create-order mit artikelliste.position[{nummer, menge, preis}]",
-        '  WICHTIG: Keine "bezeichnung" in Positionen — System holt sie aus dem Artikelstamm',
-        "- Auftrag zu Rechnung: action=convert-to-invoice mit {id: AUFTRAGS_ID}",
-        '- PDF abrufen: action=get-document-pdf mit {typ: "rechnung", id: ID}',
-        "",
-        "## Belege bearbeiten",
-        "- edit-order / edit-invoice / edit-quote / edit-delivery-note / edit-credit-memo: Header-Felder nachtraeglich aendern (Positionen koennen nach Erstellung nicht geaendert werden)",
-        "- Editierbare Felder: datum, zahlungsweise, versandart, freitext, internebezeichnung, lieferbedingung, projekt",
-        "",
-        "## Zeiterfassung",
-        "- clock-status: Stechuhr-Status abfragen",
-        "- clock-action: Ein-/Ausstempeln (cmd: kommen/gehen/pausestart/pausestop, adresse)",
-        "- clock-summary: Wochenuebersicht mit Soll/Ist",
-        "- list-time-entries: Zeiteintraege auflisten (adresse, projekt, von, bis)",
-        "- create-time-entry: Zeiteintrag erstellen (adresse ODER mitarbeiternummer, aufgabe, von, bis)",
-        "- edit-time-entry / delete-time-entry: Zeiteintrag bearbeiten/loeschen",
-        "",
-        "## Dashboard KPIs (11 Stueck)",
-        "- umsatz-monat, umsatz-jahr: Fakturierter Umsatz",
-        "- offene-auftraege: Anzahl + Summe nicht abgeschlossener Auftraege",
-        "- offene-rechnungen: Anzahl + Summe unbezahlter Rechnungen",
-        "- ueberfaellige-rechnungen: >30 Tage ueberfaellig",
-        "- top-kunde: Kunde mit hoechstem Umsatz (Jahr)",
-        "- auftragseingang-woche: Auftraege dieser Woche",
-        "- artikel-anzahl, kunden-anzahl: Stammdaten-Zaehler",
-        "- offene-bestellungen, bestellvolumen-monat: Beschaffungs-KPIs",
-        "- Fuer Kennzahlen nutze action=dashboard mit kpi=<name>. Das spart Tokens gegenueber dem Laden ganzer Listen.",
-        "",
-        "## Beschaffung (Einkauf)",
-        "- list-purchase-orders: Bestellungen auflisten (Status: offen -> freigegeben -> bestellt -> angemahnt -> empfangen)",
-        "- get-purchase-order: Einzelbestellung mit Positionen",
-        "- create-purchase-order: adresse (Lieferant-ID), positionen [{nummer, menge, preis}]",
-        "- Bestellung editieren: edit-purchase-order (lieferdatum, einkaeufer, versandart, projekt)",
-        "- release-purchase-order: Bestellung freigeben",
-        "- get-article mit includeEinkaufspreise=true: Zeigt Einkaufspreise/Staffelpreise vom Lieferanten",
-        "- Lieferanten finden: list-addresses mit where: {lieferantennummer: {notEmpty: true}}",
-        "- Lieferanten anlegen: create-address mit rolle='Lieferant', ustid (lieferantennummer wird automatisch vergeben)",
-        "",
-        "## Berichte (Reports)",
-        "- report-revenue: Umsatzbericht nach Kunde/Artikel/Monat/Quartal/Jahr/Projekt, mit Zeitraum-Filter und Marge",
-        "- report-open-items: Offene-Posten-Liste (mode: liste/altersstruktur/kreditlimit)",
-        "- report-stock: Lagerbestand (mode: uebersicht/nachbestellbedarf/lagerwert)",
-        "- report-procurement: Beschaffung (mode: volumen-lieferant/offene-bestellungen)",
-        "- report-period-comparison: Periodenvergleich (umsatz/auftragseingang/neukunden/rechnungen, monat/quartal/jahr)",
-        "- Alle Berichte sind read-only und liefern formatierte Tabellen",
-        "",
-        "## Business Queries (vordefiniert)",
-        '- action=business-query, params={preset: "nicht-versendet"} — Auftraege mit Status freigegeben (nicht versendet)',
-        '- action=business-query, params={preset: "ohne-tracking"} — Lieferscheine ohne Sendungsnummer',
-        '- action=business-query, params={preset: "offene-rechnungen"} — Unbezahlte Rechnungen',
-        '- action=business-query, params={preset: "ueberfaellige-rechnungen"} — Rechnungen >30 Tage ueberfaellig',
-        '- action=business-query, params={preset: "entwuerfe"} — Belege ohne Belegnummer (Entwuerfe)',
-        '- action=business-query, params={preset: "offene-bestellungen"} — Aktive Bestellungen (offen/freigegeben/bestellt/angemahnt)',
-        '- action=business-query, params={preset: "ueberfaellige-lieferungen"} — Bestellungen mit ueberschrittenem Lieferdatum',
-        "",
-        "## Adressen",
-        "- Kunde anlegen: create-address mit kundennummer='NEU' (System vergibt automatisch)",
-        "- Lieferant anlegen: create-address mit rolle='Lieferant', ustid (lieferantennummer wird automatisch vom System vergeben)",
-        "- Kontaktfelder: telefon, telefax, mobil, email, internetseite, ansprechpartner, abteilung",
-        "- Dokumentversand: angebot_email, auftrag_email, rechnungs_email, gutschrift_email, lieferschein_email, bestellung_email (Override-E-Mail pro Belegtyp)",
-        "- CC-Kopien: angebot_cc, auftrag_cc, rechnung_cc, gutschrift_cc, lieferschein_cc, bestellung_cc",
-        "- Rechnungsversand: rechnung_permail=1 (E-Mail erzwingen), rechnung_papier=1 (Papier), rechnung_anzahlpapier",
-        "- Abweichende Rechnungsadresse: abweichende_rechnungsadresse=1 + rechnung_name/strasse/plz/ort/land",
-        "- Bankdaten: iban, swift, inhaber, bank (einzelne Felder, KEIN verschachteltes Objekt)",
-        "- Zahlungsziele: zahlungszieltage, zahlungszieltageskonto, zahlungszielskonto",
-        "- Lieferant-Konditionen: zahlungsweiselieferant, zahlungszieltagelieferant, zahlungszieltageskontolieferant, zahlungszielskontolieferant",
-        "- Lieferant-Versand: versandartlieferant, lieferbedingung, kundennummerlieferant, portofreilieferant_aktiv",
-        "- Liefersperre: liefersperre=1, liefersperregrund, liefersperredatum",
-        "- PayPal: paypal (E-Mail), paypalinhaber, paypalwaehrung",
-        "- SEPA: mandatsreferenz, mandatsreferenzdatum, mandatsreferenzart, glaeubigeridentnr",
-        "- Sonstiges: geburtstag (YYYY-MM-DD), rabatt (%), kennung, bundesland, infoauftragserfassung",
-        "- WICHTIG: strasse (nicht straße), telefax (nicht fax), internetseite (nicht webseite/internet), anschreiben (nicht anrede — anrede existiert nicht als DB-Spalte!), typ fuer Herr/Frau/Firma",
-        "- Lieferadressen separat anlegen: create-delivery-address mit adresse (Parent-ID)",
-        "- Ansprechpartner ist ein Feld auf der Adresse, kein separates Objekt",
-        "",
-        "## Abonnements (Abo)",
-        "- list-subscriptions: Abos auflisten mit Smart Filters (adresse, artikel, gruppe)",
-        "- get-subscription: Einzelnes Abo mit Details",
-        "- create-subscription: bezeichnung (Pflicht), adresse, artikel/artikelnummer, preisart (monat/jahr/wochen/einmalig), preis, menge",
-        "- edit-subscription / delete-subscription: Abo bearbeiten/kuendigen",
-        "",
-        "## CRM / Tracking / Dateien",
-        "- create-crm-document: CRM-Notiz erstellen (typ: email/brief/telefon/notiz, betreff, adresse_from)",
-        "- create-tracking: Trackingnummer anlegen (tracking, lieferschein als Belegnummer-String, gewicht, anzahlpakete, versendet_am)",
-        "- create-resubmission: Wiedervorlage erstellen (bezeichnung, datum_erinnerung, zeit_erinnerung, adresse)",
-        "- upload-file: Datei hochladen (dateiname, titel, file_content als base64, objekt_typ, objekt_id)",
-        "- list-files: Dateien auflisten",
-        "",
-        "## Stammdaten (Lesen)",
-        "- list-categories: Artikelkategorien auflisten",
-        "- list-shipping-methods: Versandarten auflisten",
-        "- list-addresses / get-address: Adressen auflisten/abrufen",
-        "- list-articles / get-article: Artikel auflisten/abrufen (include: verkaufspreise, lagerbestand, einkaufspreise)",
-        "",
-        "## Wichtige Regeln",
-        "- Geloeschte Datensaetze (DEL) werden automatisch ausgeblendet.",
-        "- Bei leeren Ergebnissen: schlage dem Nutzer alternative Filter vor.",
-        "- Antworte in der Sprache des Nutzers.",
-        "- Bei Fehlern: erklaere was schief ging und schlage eine Loesung vor.",
-        "- Maximal 50 Ergebnisse pro Abfrage — nutze Filter zum Eingrenzen.",
-        "- Fuer Batch-Operationen: action=batch-pdf, max 20 PDFs auf einmal.",
-      ].join("\n"),
+      instructions: buildInstructions(config.mode),
     }
   );
 
@@ -428,9 +342,10 @@ async function main() {
   // Build a set of tool names allowed in readonly mode for fast lookup
   const readonlyToolNames = new Set(READONLY_TOOLS.map((t) => t.name));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ServerResult> => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra): Promise<ServerResult> => {
     const { name, arguments: args } = request.params;
     const toolArgs = (args ?? {}) as Record<string, unknown>;
+    const sessionId = extra?.sessionId;
 
     auditLog(name, toolArgs);
 
@@ -444,7 +359,7 @@ async function main() {
 
     // Router mode tools
     if (name === "openxe-discover") {
-      return handleDiscover(toolArgs) as ServerResult;
+      return handleDiscover(toolArgs, sessionId) as ServerResult;
     }
     if (name === "openxe") {
       return handleRouter(toolArgs, client) as Promise<ServerResult>;
@@ -495,9 +410,21 @@ async function main() {
   const transportArg = process.argv[2];
 
   if (transportArg === "--http") {
-    // Streamable HTTP transport (for remote/networked usage)
+    // Streamable HTTP transport (for remote / LAN usage).
+    //
+    // Session-managed per the canonical pattern in
+    // modelcontextprotocol/servers/everything/streamableHttp.ts:
+    //  - POST /mcp without Mcp-Session-Id + isInitializeRequest(body) → new
+    //    transport, server.connect() once, transport.sessionId stored in Map
+    //  - POST/GET/DELETE /mcp with Mcp-Session-Id → reuse stored transport
+    //  - SDK's handleRequest() handles the SSE open/stream/close lifecycle;
+    //    onclose (triggered on DELETE or stream teardown) removes from Map
+    //  - Idle sessions are evicted after IDLE_TIMEOUT_MS; SDK does not GC.
     const { StreamableHTTPServerTransport } = await import(
       "@modelcontextprotocol/sdk/server/streamableHttp.js"
+    );
+    const { isInitializeRequest } = await import(
+      "@modelcontextprotocol/sdk/types.js"
     );
     const http = await import("node:http");
 
@@ -509,37 +436,132 @@ async function main() {
       console.error("[INFO] HTTP auth enabled \u2014 Bearer token required for all requests");
     }
 
-    const httpServer = http.createServer(async (req, res) => {
-      if (req.url === "/mcp" && req.method === "POST") {
-        // Check auth if token is configured
-        if (authToken) {
-          const provided = req.headers.authorization;
-          if (!provided || provided !== `Bearer ${authToken}`) {
-            res.writeHead(401, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: "Unauthorized \u2014 set Authorization: Bearer <MCP_AUTH_TOKEN>" }));
-            return;
-          }
-        }
+    // Per-session transport + last-access timestamp for idle eviction.
+    const transports = new Map<string, InstanceType<typeof StreamableHTTPServerTransport>>();
+    const lastAccess = new Map<string, number>();
+    const IDLE_TIMEOUT_MS = 30 * 60_000; // 30 minutes
+    const CLEANUP_INTERVAL_MS = 5 * 60_000; // sweep every 5 minutes
 
-        // DNS rebinding protection: validate Origin header
-        const allowedOrigins = process.env.MCP_ALLOWED_ORIGINS?.split(',').map(o => o.trim());
-        if (allowedOrigins && allowedOrigins.length > 0) {
-          const origin = req.headers.origin || req.headers.referer;
-          if (!origin || !allowedOrigins.some(allowed => (origin as string).startsWith(allowed))) {
-            res.writeHead(403, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: "Forbidden \u2014 Origin not allowed. Set MCP_ALLOWED_ORIGINS." }));
-            return;
+    const cleanupTimer = setInterval(() => {
+      const now = Date.now();
+      for (const [sid, ts] of lastAccess) {
+        if (now - ts > IDLE_TIMEOUT_MS) {
+          const t = transports.get(sid);
+          if (t) {
+            t.close().catch(() => { /* ignore — transport may already be gone */ });
           }
+          // onclose handler (below) removes from the maps when close() lands.
         }
+      }
+    }, CLEANUP_INTERVAL_MS);
+    cleanupTimer.unref?.();
 
-        const transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => crypto.randomUUID(),
+    // Read JSON body from Node's IncomingMessage — needed so we can run
+    // isInitializeRequest() before dispatching to the transport.
+    async function readJsonBody(req: import("node:http").IncomingMessage): Promise<unknown> {
+      return new Promise((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          const raw = Buffer.concat(chunks).toString("utf8");
+          if (!raw) return resolve(undefined);
+          try { resolve(JSON.parse(raw)); }
+          catch (err) { reject(err); }
         });
-        await server.connect(transport);
-        await transport.handleRequest(req, res);
-      } else {
-        res.writeHead(404);
-        res.end("Not found");
+        req.on("error", reject);
+      });
+    }
+
+    function sendJson(res: import("node:http").ServerResponse, status: number, body: unknown): void {
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(body));
+    }
+
+    function checkAuth(req: import("node:http").IncomingMessage): boolean {
+      if (!authToken) return true;
+      return req.headers.authorization === `Bearer ${authToken}`;
+    }
+
+    function checkOrigin(req: import("node:http").IncomingMessage): boolean {
+      const allowedOrigins = process.env.MCP_ALLOWED_ORIGINS?.split(",").map(o => o.trim());
+      if (!allowedOrigins || allowedOrigins.length === 0) return true;
+      const origin = req.headers.origin || req.headers.referer;
+      if (!origin) return false;
+      return allowedOrigins.some(allowed => (origin as string).startsWith(allowed));
+    }
+
+    const httpServer = http.createServer(async (req, res) => {
+      if (req.url !== "/mcp") { res.writeHead(404); res.end("Not found"); return; }
+
+      // Auth + DNS-rebinding protection apply to every method.
+      if (!checkAuth(req)) {
+        return sendJson(res, 401, { error: "Unauthorized — set Authorization: Bearer <MCP_AUTH_TOKEN>" });
+      }
+      if (!checkOrigin(req)) {
+        return sendJson(res, 403, { error: "Forbidden — Origin not allowed. Set MCP_ALLOWED_ORIGINS." });
+      }
+
+      const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+      try {
+        if (req.method === "POST") {
+          const body = await readJsonBody(req);
+
+          let transport = sessionId ? transports.get(sessionId) : undefined;
+
+          if (!transport) {
+            // No session yet — must be an initialize request. Anything else
+            // without a valid session is rejected per the MCP spec.
+            if (!isInitializeRequest(body)) {
+              return sendJson(res, 400, {
+                error: "Bad Request — no valid Mcp-Session-Id and not an initialize request",
+              });
+            }
+
+            transport = new StreamableHTTPServerTransport({
+              sessionIdGenerator: () => crypto.randomUUID(),
+              onsessioninitialized: (sid) => {
+                transports.set(sid, transport!);
+                lastAccess.set(sid, Date.now());
+              },
+            });
+            transport.onclose = () => {
+              const sid = transport!.sessionId;
+              if (sid) {
+                transports.delete(sid);
+                lastAccess.delete(sid);
+                forgetDiscoverCallLog(sid);
+              }
+            };
+
+            // server.connect() is called exactly once per session.
+            await server.connect(transport);
+          } else {
+            lastAccess.set(sessionId!, Date.now());
+          }
+
+          await transport.handleRequest(req, res, body);
+          return;
+        }
+
+        if (req.method === "GET" || req.method === "DELETE") {
+          if (!sessionId || !transports.has(sessionId)) {
+            return sendJson(res, 400, { error: "Missing or unknown Mcp-Session-Id" });
+          }
+          lastAccess.set(sessionId, Date.now());
+          await transports.get(sessionId)!.handleRequest(req, res);
+          return;
+        }
+
+        res.writeHead(405, { Allow: "POST, GET, DELETE" });
+        res.end();
+      } catch (err) {
+        console.error("[ERROR] /mcp handler:", err);
+        if (!res.headersSent) {
+          sendJson(res, 500, { error: "Internal server error" });
+        } else {
+          res.end();
+        }
       }
     });
 

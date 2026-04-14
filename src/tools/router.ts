@@ -52,7 +52,7 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "get-address", label: "Adresse nach ID abrufen (alle Details)", category: "stammdaten", handler: "read", toolName: "openxe-get-address" },
   { action: "list-articles", label: "Artikel auflisten [+Smart Filter] (Filter: nummer, name_de; Include: verkaufspreise, lagerbestand)", category: "stammdaten", handler: "read", toolName: "openxe-list-articles" },
   { action: "get-article", label: "Artikel nach ID (alle Details + Preise + Lager + Einkaufspreise via includeEinkaufspreise)", category: "stammdaten", handler: "read", toolName: "openxe-get-article" },
-  { action: "create-address", label: "Kunde/Lieferant anlegen (alle Felder: name, typ, strasse, plz, ort, land, email, telefon, telefax, mobil, internetseite, ansprechpartner, anschreiben (Briefanrede), iban, swift, inhaber, bank, zahlungszieltage, ustid, rolle, lieferantennummer, Dokumentversand: angebot_email/auftrag_email/rechnungs_email/gutschrift_email/lieferschein_email/bestellung_email + *_cc, rechnung_permail, rechnung_papier, abweichende_rechnungsadresse, Lieferant-Konditionen: zahlungsweiselieferant/zahlungszieltagelieferant/zahlungszielskontolieferant, PayPal: paypal/paypalinhaber/paypalwaehrung, SEPA: mandatsreferenz/glaeubigeridentnr, geburtstag)", category: "stammdaten", handler: "address", toolName: "openxe-create-address" },
+  { action: "create-address", label: "Kunde/Lieferant anlegen — System vergibt kundennummer/lieferantennummer automatisch, NICHT selbst angeben. Felder: name, typ, strasse, plz, ort, land, email, telefon, telefax, mobil, internetseite, ansprechpartner, anschreiben (Briefanrede), iban, swift, inhaber, bank, zahlungszieltage, ustid, rolle, Dokumentversand: angebot_email/auftrag_email/rechnungs_email/gutschrift_email/lieferschein_email/bestellung_email + *_cc, rechnung_permail, rechnung_papier, abweichende_rechnungsadresse, Lieferant-Konditionen: zahlungsweiselieferant/zahlungszieltagelieferant/zahlungszielskontolieferant, PayPal: paypal/paypalinhaber/paypalwaehrung, SEPA: mandatsreferenz/glaeubigeridentnr, geburtstag", category: "stammdaten", handler: "address", toolName: "openxe-create-address" },
   { action: "edit-address", label: "Adresse bearbeiten", category: "stammdaten", handler: "address", toolName: "openxe-edit-address" },
   { action: "create-delivery-address", label: "Lieferadresse anlegen", category: "stammdaten", handler: "address", toolName: "openxe-create-delivery-address" },
   { action: "edit-delivery-address", label: "Lieferadresse bearbeiten", category: "stammdaten", handler: "address", toolName: "openxe-edit-delivery-address" },
@@ -62,20 +62,20 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "list-files", label: "Dateien/Anhaenge auflisten [+Smart Filter]", category: "stammdaten", handler: "read", toolName: "openxe-list-files" },
 
   // === Belege ===
-  { action: "list-orders", label: "Auftraege auflisten [+Smart Filter] (Filter: belegnr, kundennummer, status, datum)", category: "belege", handler: "document-read", toolName: "openxe-list-orders" },
-  { action: "get-order", label: "Auftrag nach ID (mit Positionen)", category: "belege", handler: "document-read", toolName: "openxe-get-order" },
-  { action: "list-invoices", label: "Rechnungen auflisten [+Smart Filter]", category: "belege", handler: "document-read", toolName: "openxe-list-invoices" },
-  { action: "get-invoice", label: "Rechnung nach ID (mit Positionen)", category: "belege", handler: "document-read", toolName: "openxe-get-invoice" },
-  { action: "list-quotes", label: "Angebote auflisten [+Smart Filter]", category: "belege", handler: "document-read", toolName: "openxe-list-quotes" },
-  { action: "get-quote", label: "Angebot nach ID", category: "belege", handler: "document-read", toolName: "openxe-get-quote" },
-  { action: "list-delivery-notes", label: "Lieferscheine auflisten [+Smart Filter]", category: "belege", handler: "document-read", toolName: "openxe-list-delivery-notes" },
-  { action: "get-delivery-note", label: "Lieferschein nach ID", category: "belege", handler: "document-read", toolName: "openxe-get-delivery-note" },
-  { action: "list-credit-memos", label: "Gutschriften auflisten [+Smart Filter]", category: "belege", handler: "document-read", toolName: "openxe-list-credit-memos" },
-  { action: "get-credit-memo", label: "Gutschrift nach ID", category: "belege", handler: "document-read", toolName: "openxe-get-credit-memo" },
-  { action: "create-order", label: "Neuen Auftrag erstellen", category: "belege", handler: "document", toolName: "openxe-create-order" },
-  { action: "create-quote", label: "Neues Angebot erstellen", category: "belege", handler: "document", toolName: "openxe-create-quote" },
-  { action: "create-invoice", label: "Neue Rechnung erstellen", category: "belege", handler: "document", toolName: "openxe-create-invoice" },
-  { action: "create-credit-note", label: "Gutschrift erstellen", category: "belege", handler: "document", toolName: "openxe-create-credit-note" },
+  { action: "list-orders", label: "Auftraege auflisten [+Smart Filter] (belegnr, kundennummer, status_preset, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-orders" },
+  { action: "get-order", label: "Auftrag nach ID (include=positionen fuer Details)", category: "belege", handler: "document-read", toolName: "openxe-get-order" },
+  { action: "list-invoices", label: "Rechnungen auflisten [+Smart Filter] (belegnr, kundennummer, status_preset, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-invoices" },
+  { action: "get-invoice", label: "Rechnung nach ID (include=positionen fuer Details)", category: "belege", handler: "document-read", toolName: "openxe-get-invoice" },
+  { action: "list-quotes", label: "Angebote auflisten [+Smart Filter] (belegnr, kundennummer, status_preset, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-quotes" },
+  { action: "get-quote", label: "Angebot nach ID (include=positionen fuer Details)", category: "belege", handler: "document-read", toolName: "openxe-get-quote" },
+  { action: "list-delivery-notes", label: "Lieferscheine auflisten [+Smart Filter] (belegnr, kundennummer, status_preset, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-delivery-notes" },
+  { action: "get-delivery-note", label: "Lieferschein nach ID (include=positionen fuer Details)", category: "belege", handler: "document-read", toolName: "openxe-get-delivery-note" },
+  { action: "list-credit-memos", label: "Gutschriften auflisten [+Smart Filter] (belegnr, kundennummer, status_preset, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-credit-memos" },
+  { action: "get-credit-memo", label: "Gutschrift nach ID (include=positionen fuer Details)", category: "belege", handler: "document-read", toolName: "openxe-get-credit-memo" },
+  { action: "create-order", label: "Neuen Auftrag erstellen (adresse=Kunden-ID, positionen: [{nummer, menge, preis}], keine bezeichnung in Positionen). kundennummer wird automatisch aus der Adresse gezogen — NICHT selbst angeben. Adresse muss eine Kundennummer haben, sonst Fehler.", category: "belege", handler: "document", toolName: "openxe-create-order" },
+  { action: "create-quote", label: "Neues Angebot erstellen (adresse=Kunden-ID, positionen: [{nummer, menge, preis}], optional gueltigbis). kundennummer wird automatisch aus der Adresse gezogen.", category: "belege", handler: "document", toolName: "openxe-create-quote" },
+  { action: "create-invoice", label: "Neue Rechnung erstellen (adresse=Kunden-ID, positionen: [{nummer, menge, preis}] — preis ist Pflicht). kundennummer automatisch aus Adresse.", category: "belege", handler: "document", toolName: "openxe-create-invoice" },
+  { action: "create-credit-note", label: "Gutschrift erstellen (adresse=Kunden-ID, positionen: [{nummer, menge, preis}], optional rechnungid). kundennummer automatisch aus Adresse.", category: "belege", handler: "document", toolName: "openxe-create-credit-note" },
   { action: "edit-order", label: "Auftrag bearbeiten (Header-Felder: id, lieferdatum, versandart, zahlungsweise, freitext, internebezeichnung)", category: "belege", handler: "document", toolName: "openxe-edit-order" },
   { action: "edit-invoice", label: "Rechnung bearbeiten (id, zahlungsweise, zahlungszieltage, freitext, internebezeichnung)", category: "belege", handler: "document", toolName: "openxe-edit-invoice" },
   { action: "edit-quote", label: "Angebot bearbeiten (id, gueltigbis, zahlungsweise, freitext, internebezeichnung, lieferbedingung)", category: "belege", handler: "document", toolName: "openxe-edit-quote" },
@@ -146,6 +146,62 @@ for (const entry of ACTION_REGISTRY) {
   ACTION_MAP.set(entry.action, entry);
 }
 
+// --- Discover Loop Protection ---
+//
+// Counter is keyed on (session id, call signature). The session part
+// isolates HTTP clients from each other. The signature part (`category`)
+// prevents legitimate narrowing — discover() -> discover({category: "belege"})
+// — from being throttled as if it were a repetition loop.
+
+const DISCOVER_WINDOW_MS = 60_000; // 60 seconds
+const DISCOVER_MAX_FULL = 1; // first call returns full listing
+const DISCOVER_MAX_SHORT = 3; // calls 2-3 return short reminder
+// calls 4+ return STOP message
+
+const DEFAULT_SESSION = "__default__";
+// Non-printing separator. Session ids come from MCP transports (UUIDs) and
+// category comes from a Zod enum — neither can contain this char, so the
+// (session, category) tuple round-trips unambiguously.
+const BUCKET_SEPARATOR = "\u0000";
+const discoverCallLogs = new Map<string, number[]>();
+
+function bucketKey(sessionId: string, category: string): string {
+  return `${sessionId}${BUCKET_SEPARATOR}${category}`;
+}
+
+function getDiscoverCallCount(
+  sessionId: string = DEFAULT_SESSION,
+  category: string = "alle"
+): number {
+  const now = Date.now();
+  const key = bucketKey(sessionId, category);
+  const pruned = (discoverCallLogs.get(key) ?? []).filter(
+    (ts) => now - ts < DISCOVER_WINDOW_MS
+  );
+  pruned.push(now);
+  discoverCallLogs.set(key, pruned);
+  return pruned.length;
+}
+
+/**
+ * Drop the discover log for a session — call on session close so the Map
+ * doesn't grow unbounded across long-lived server processes. Removes all
+ * call-signature buckets that belong to the given session.
+ */
+export function forgetDiscoverCallLog(sessionId: string): void {
+  const prefix = `${sessionId}${BUCKET_SEPARATOR}`;
+  for (const key of discoverCallLogs.keys()) {
+    if (key.startsWith(prefix)) {
+      discoverCallLogs.delete(key);
+    }
+  }
+}
+
+/** Reset all loop protection (used in tests). */
+export function resetDiscoverCallLog(): void {
+  discoverCallLogs.clear();
+}
+
 // --- Discover Tool ---
 
 const DiscoverInput = z.object({
@@ -159,7 +215,7 @@ const DiscoverInput = z.object({
 export const DISCOVER_TOOL_DEFINITION: ToolDefinition = {
   name: "openxe-discover",
   description:
-    "Zeigt alle verfuegbaren OpenXE-Aktionen. IMMER ZUERST AUFRUFEN wenn du nicht weisst welche Aktionen es gibt. Optional: category='stammdaten'/'belege'/'beschaffung'/'berichte'/'zeiterfassung'/'dashboard'/'alle'",
+    "Shows available OpenXE actions. Call ONCE at conversation start, then use 'openxe' tool to execute actions. Do NOT call more than once per conversation. Optional: category filter.",
   inputSchema: zodToJsonSchema(DiscoverInput) as Record<string, unknown>,
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 };
@@ -178,8 +234,35 @@ const CATEGORY_LABELS: Record<Category, string> = {
 
 const CATEGORY_ORDER: Category[] = ["stammdaten", "belege", "beschaffung", "berichte", "business", "shop", "zeiterfassung", "system", "dashboard"];
 
-export function handleDiscover(args: Record<string, unknown>): ToolResult {
+export function handleDiscover(
+  args: Record<string, unknown>,
+  sessionId?: string
+): ToolResult {
   const { category } = DiscoverInput.parse(args);
+  const callCount = getDiscoverCallCount(sessionId, category);
+
+  // Empty error for excessive calls (4+) — minimal response to starve the loop
+  if (callCount > DISCOVER_MAX_SHORT) {
+    return {
+      content: [{
+        type: "text",
+        text: "Error: tool rate limit exceeded.",
+      }],
+      isError: true,
+    };
+  }
+
+  // Short reminder for repeated calls (2-3)
+  if (callCount > DISCOVER_MAX_FULL) {
+    return {
+      content: [{
+        type: "text",
+        text: "You already have the action list. Do NOT call openxe-discover again. Use the 'openxe' tool with action=<name> and params={...} to execute an action. Example: openxe action=dashboard params={kpi:\"umsatz-monat\"}",
+      }],
+      isError: true,
+    };
+  }
+
   const categories = category === "alle" ? CATEGORY_ORDER : [category as Category];
 
   const lines: string[] = [];
@@ -188,12 +271,14 @@ export function handleDiscover(args: Record<string, unknown>): ToolResult {
   if (category === "alle" || ["stammdaten", "belege", "beschaffung"].includes(category as string)) {
     lines.push("=== Smart Filter (verfuegbar auf allen list-* Aktionen) ===");
     lines.push('where         Client-seitige Filter: {plz: {startsWith: "2"}}, {email: {empty: true}}, {name: {contains: "Mueller"}}');
-    lines.push("              Operatoren: equals, contains, startsWith, endsWith, gt, lt, gte, lte, range, empty, notEmpty");
+    lines.push("              Operatoren: equals, contains, startsWith, endsWith, gt, lt, gte, lte, range, empty, notEmpty, in, containsAny, containsAll");
+    lines.push('              Dot-Notation fuer verschachtelte Array-Felder: {"positionen.nummer": {containsAll: ["ART-001", "ART-002"]}}');
     lines.push('fields        Nur bestimmte Felder: ["kundennummer", "name", "plz"]');
     lines.push('sort_field    Sortieren nach Feld (z.B. "gesamtsumme", "datum", "name")');
     lines.push('sort_order    "asc" oder "desc"');
     lines.push("limit         Max. Ergebnisse (z.B. 10 fuer Top-10)");
-    lines.push("format        Ausgabeformat: json, table, csv, ids");
+    lines.push("format        Ausgabeformat: json, table, csv, csv-positions, ids");
+    lines.push("              csv-positions: eine CSV-Zeile pro Belegposition (erfordert Belege mit positionen-Array)");
     lines.push('zeitraum      Datum-Shortcut: "heute", "diese-woche", "letzter-monat", "oktober-2025", "Q3-2025", "2025"');
     lines.push('status_preset Status-Filter: "offen", "unbezahlt", "ueberfaellig", "bezahlt", "entwurf", "mahnkandidaten"');
     lines.push('aggregate     Aggregation: "count", {sum: "gesamtsumme"}, {groupBy: "land", count: true}');
@@ -221,6 +306,7 @@ export function handleDiscover(args: Record<string, unknown>): ToolResult {
     lines.push('Top 5 Auftraege: openxe action=list-orders params={sort_field:"gesamtsumme",sort_order:"desc",limit:5}');
     lines.push('Umsatz diesen Monat: openxe action=dashboard params={kpi:"umsatz-monat"}');
     lines.push('Unbezahlte Rechnungen: openxe action=business-query params={preset:"offene-rechnungen"}');
+    lines.push('Rechnungen mit Artikel A+B: openxe action=list-invoices params={where:{"positionen.nummer":{containsAll:["ART-001","ART-002"]}},format:"csv-positions"}');
   }
 
   return {
@@ -244,7 +330,29 @@ const RouterInput = z.object({
 export const ROUTER_TOOL_DEFINITION: ToolDefinition = {
   name: "openxe",
   description:
-    "Fuehrt eine OpenXE-Aktion aus. Nutze zuerst openxe-discover um verfuegbare Aktionen zu sehen. Beispiele: {action:'list-orders', params:{status_preset:'offen'}} oder {action:'dashboard', params:{kpi:'umsatz-monat'}}",
+    "Fuehrt eine OpenXE-Aktion aus (Warenwirtschaft / ERP). Rufe openxe-discover EINMAL pro Session fuer die vollstaendige Aktionsliste auf.\n\n" +
+    "Beleg-Aktionen (Filter: belegnr, kundennummer, status_preset, zeitraum, where):\n" +
+    "  list-invoices       Rechnungen\n" +
+    "  list-orders         Auftraege\n" +
+    "  list-quotes         Angebote\n" +
+    "  list-delivery-notes Lieferscheine\n" +
+    "  list-credit-memos   Gutschriften\n" +
+    "  get-invoice / get-order / ... (mit id)\n\n" +
+    "Zeitraum-Parameter (NICHT filter_jahr o.ae.): 'heute', 'diese-woche', 'dieser-monat', 'letzter-monat', 'letzte-30-tage', 'oktober-2025', 'Q3-2025', '2025'\n\n" +
+    "where (clientseitige Filter, auch auf Beleg-Positionen via Dot-Notation):\n" +
+    "  Operatoren: equals, contains, startsWith, endsWith, gt, lt, gte, lte, range, empty, notEmpty, in, containsAny, containsAll\n" +
+    "  Flach:      {name:{contains:'Mueller'}}, {gesamtsumme:{gt:100}}\n" +
+    "  Positionen: {'positionen.nummer':{containsAny:['100003','1000213']}}  -- Rechnungen mit Artikel A oder B\n" +
+    "              {'positionen.nummer':{containsAll:['A','B']}}             -- Rechnungen mit BEIDEN Artikeln\n\n" +
+    "format: json (default) | table | csv | csv-positions | ids\n" +
+    "  csv-positions: EINE CSV-Zeile pro Belegposition mit Kunde+Belegnr+Datum als Prefix und Artikelnummer/Bezeichnung/Beschreibung/Menge/Einheit/Preis/Gesamtpreis als Positionsspalten. Nutzt automatisch include=positionen.\n\n" +
+    "Beispiele:\n" +
+    "  Rechnungen 2025 mit Artikel 100003 oder 1000213 als Positions-CSV:\n" +
+    "    {action:'list-invoices', params:{zeitraum:'2025', where:{'positionen.nummer':{containsAny:['100003','1000213']}}, format:'csv-positions'}}\n" +
+    "  Offene Auftraege diesen Monat:\n" +
+    "    {action:'list-orders', params:{zeitraum:'dieser-monat', status_preset:'offen'}}\n" +
+    "  Umsatz aktueller Monat:\n" +
+    "    {action:'dashboard', params:{kpi:'umsatz-monat'}}",
   inputSchema: zodToJsonSchema(RouterInput) as Record<string, unknown>,
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
 };
