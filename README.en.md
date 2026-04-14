@@ -82,6 +82,63 @@ claude mcp add openxe -- npx tsx /path/to/openxe-mcp-server/src/index.ts
 
 Set the required environment variables in your shell before launching Claude Code.
 
+## Alternative: Local build with `.env` file (Claude Desktop / file-based clients)
+
+If you cloned the repo and built it locally (`npm install && npm run build`), you can keep credentials in a `.env` file inside the project directory instead of hard-coding them into your MCP client configuration. This applies to clients that read a JSON config file (Claude Desktop, Cursor, Cline). For Claude Code use `claude mcp add` as shown above.
+
+A typical `mcpServers` entry looks like this:
+
+```json
+{
+  "mcpServers": {
+    "openxe": {
+      "command": "node",
+      "args": [
+        "<ABSOLUTE-PATH>/openxe-mcp-server/dist/index.js"
+      ],
+      "cwd": "<ABSOLUTE-PATH>/openxe-mcp-server"
+    }
+  }
+}
+```
+
+Important:
+
+- **No `env` block** in the MCP client configuration -- inline values would otherwise override the entries from `.env`.
+- **`cwd` is mandatory** and must point at the project directory (`openxe-mcp-server`). `dotenv` loads `.env` from the **current working directory of the process**, not from the directory where `index.js` lives. Without `cwd`, the MCP client launches Node from its own install folder and the `.env` file will not be found.
+- **Use `node`, not `npx`** -- `npx -y github:...` would pull the GitHub package into a cache folder every time and ignore your local build.
+- Run `npm run build` after any code changes -- the entry point is `dist/index.js`, not the TypeScript sources.
+
+## Smart Filters
+
+All list queries support client-side filters:
+
+- **where:** `{plz: {startsWith: "2"}}`, `{gesamtsumme: {gt: 100}}`, `{land: {equals: "DE"}}`, `{"positionen.nummer": {containsAny: ["ART-001", "ART-002"]}}`
+- **New where operators:** `in` (field matches any value in a list), `containsAny` (array field contains at least one of the values), `containsAll` (array field contains all values, AND semantics). All three compare case-insensitively.
+- **Dot notation:** field names like `positionen.nummer` iterate over nested array fields of a document. A single condition matches "at least one element". Multiple conditions sharing the same array prefix (e.g. `positionen.nummer` + `positionen.menge`) are paired element-wise — the document only matches if the **same** array element satisfies all of them.
+- **sort / limit:** sort results and cap the number of rows
+- **zeitraum:** `dieser-monat`, `letzter-monat`, `letzte-30-tage`, `Q1-2026`, `2025`
+- **status_preset:** `offene-rechnungen`, `nicht-versendet`, `ueberfaellige-rechnungen`, etc.
+- **aggregate:** `count`, `sum_feld`, `avg_feld`, `groupBy_feld`
+- **format:** `table`, `csv`, `ids`, `csv-positions` (for documents: emits one CSV row per line item instead of per document, with header fields as a prefix followed by line item fields. When the where filter targets `positionen.*`, only the matching positions are exported.)
+
+Example (router mode) -- find invoices containing article `ART-001` or `ART-002` and export only the matching positions as a line-item-level CSV:
+
+```json
+{
+  "action": "list-invoices",
+  "params": {
+    "zeitraum": "2025",
+    "where": {
+      "positionen.nummer": {"containsAny": ["ART-001", "ART-002"]}
+    },
+    "format": "csv-positions"
+  }
+}
+```
+
+In `full` mode the same call is invoked directly as the `openxe-list-invoices` tool with the inner `params` object as its arguments.
+
 ## Security
 
 ### Local Operation (Default)

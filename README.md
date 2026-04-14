@@ -97,6 +97,29 @@ Ab Version 0.3+. Oeffne **Settings > MCP** und fuege folgendes ein:
 
 > **Tipp fuer lokale Modelle:** Verwende den `router`-Modus (Standard). Er reduziert den Token-Verbrauch von ~10.000 auf ~1.500 Tokens fuer die Tool-Definitionen -- das laesst mehr Platz fuer deine eigentliche Frage und die Antwort.
 
+**Alternative: Lokaler Build mit `.env`-Datei**
+
+Wenn du das Repo selbst geklont und lokal gebaut hast (`npm install && npm run build`), kannst du die Credentials in einer `.env`-Datei im Projektverzeichnis pflegen, statt sie inline in der MCP-Client-Konfiguration zu hinterlegen. Der Eintrag sieht dann so aus:
+
+```json
+{
+  "openxe": {
+    "command": "node",
+    "args": [
+      "<ABSOLUTER-PFAD>/openxe-mcp-server/dist/index.js"
+    ],
+    "cwd": "<ABSOLUTER-PFAD>/openxe-mcp-server"
+  }
+}
+```
+
+Wichtig:
+
+- **Kein `env`-Block** in der MCP-Client-Konfiguration — sonst ueberschreiben die inline-Werte die Eintraege aus der `.env`.
+- **`cwd` zwingend setzen**, und zwar auf das Projektverzeichnis (`openxe-mcp-server`). `dotenv` laedt die `.env` aus dem **aktuellen Arbeitsverzeichnis des Prozesses**, nicht aus dem Verzeichnis, in dem `index.js` liegt. Ohne `cwd` startet der MCP-Client den Node-Prozess aus seinem eigenen Installationsordner, und die `.env` wird nicht gefunden.
+- **Kein `npx`, sondern `node`** — `npx -y github:...` wuerde jedes Mal das GitHub-Package in einen Cache-Ordner ziehen und deinen lokalen Build ignorieren.
+- Nach Code-Aenderungen `npm run build` nicht vergessen — gestartet wird `dist/index.js`, nicht die TypeScript-Quellen.
+
 #### OpenWebUI + Ollama
 
 Ab OpenWebUI 0.6+. Unter **Admin > Tools > MCP Servers** eintragen:
@@ -150,12 +173,31 @@ Starte deinen KI-Assistenten und frage: *"Zeig mir alle Artikel"*. Wenn Daten ko
 
 Alle Listen-Abfragen unterstuetzen clientseitige Filter:
 
-- **where:** `{plz: {startsWith: "2"}}`, `{gesamtsumme: {gt: 100}}`, `{land: {equals: "DE"}}`
+- **where:** `{plz: {startsWith: "2"}}`, `{gesamtsumme: {gt: 100}}`, `{land: {equals: "DE"}}`, `{"positionen.nummer": {containsAny: ["ART-001", "ART-002"]}}`
+- **where-Operatoren (neu):** `in` (Feld matcht einen Wert aus Liste), `containsAny` (Array-Feld enthaelt mindestens einen Wert), `containsAll` (Array-Feld enthaelt alle Werte). Alle drei vergleichen case-insensitive.
+- **Dot-Notation:** Feldnamen wie `positionen.nummer` iterieren ueber verschachtelte Array-Felder eines Belegs. Eine einzelne Bedingung matcht "mindestens ein Element". Mehrere Bedingungen mit gleichem Array-Prefix (z.B. `positionen.nummer` + `positionen.menge`) werden automatisch elementweise gepaart — der Beleg matcht nur, wenn dasselbe Array-Element alle Bedingungen erfuellt.
 - **sort/limit:** Ergebnisse sortieren und begrenzen
 - **zeitraum:** `dieser-monat`, `letzter-monat`, `letzte-30-tage`, `Q1-2026`, `2025`
 - **status_preset:** `offene-rechnungen`, `nicht-versendet`, `ueberfaellige-rechnungen`, etc.
 - **aggregate:** `count`, `sum_feld`, `avg_feld`, `groupBy_feld`
-- **format:** `table`, `csv`, `ids`
+- **format:** `table`, `csv`, `ids`, `csv-positions` (bei Belegen: eine CSV-Zeile pro Belegposition statt pro Beleg, mit Beleg-Header-Feldern als Prefix und Positions-Feldern dahinter; bei Filter auf `positionen.*` werden nur die passenden Positionen exportiert).
+
+Beispiel (router-Modus): Rechnungen finden, die Artikel `ART-001` oder `ART-002` enthalten, und nur die passenden Positionen als CSV exportieren:
+
+```json
+{
+  "action": "list-invoices",
+  "params": {
+    "zeitraum": "2025",
+    "where": {
+      "positionen.nummer": {"containsAny": ["ART-001", "ART-002"]}
+    },
+    "format": "csv-positions"
+  }
+}
+```
+
+Im `full`-Modus wird derselbe Aufruf direkt als Tool `openxe-list-invoices` mit dem inneren `params`-Objekt als Argumenten verwendet.
 
 ### Berichte
 
