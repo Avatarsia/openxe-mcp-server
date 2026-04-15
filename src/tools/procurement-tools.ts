@@ -23,6 +23,7 @@ import {
   applyFields,
   applyWhere,
   applyStatusPreset,
+  getStatusPresetNames,
   parseZeitraum,
   formatAsTable,
   formatAsCsv,
@@ -117,6 +118,28 @@ async function handleListPurchaseOrders(
   client: OpenXEClient
 ): Promise<ToolResult> {
   const filters = ListPurchaseOrdersInput.parse(args);
+
+  // Validate status_preset up-front — reject unknown presets with a clear
+  // error instead of silently passing them through applyStatusPreset
+  // (which would return all records unfiltered).
+  if (filters.status_preset) {
+    const valid = getStatusPresetNames("purchaseOrders");
+    if (!valid.includes(filters.status_preset)) {
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `Unbekanntes status_preset: "${filters.status_preset}". ` +
+              `Erlaubt: ${valid.join(" | ")}. ` +
+              `Fuer Business-Presets (offene-bestellungen, ueberfaellige-lieferungen) ` +
+              `stattdessen openxe-business-query nutzen.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
 
   // Resolve zeitraum shortcut into datum_gte / datum_lte
   if (filters.zeitraum) {

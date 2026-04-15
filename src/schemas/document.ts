@@ -194,8 +194,9 @@ export const ListPurchaseOrdersInput = z.object({
   fields: z.string().optional().describe("Comma-separated fields to return"),
   zeitraum: z.string().optional().describe("Time period: heute, diese-woche, dieser-monat, letzter-monat, letzte-N-tage"),
   status_preset: z.string().optional().describe(
-    "Status preset (Wert muss exakt einer dieser sein): offen | freigegeben | bestellt | angemahnt | empfangen | aktiv. " +
-    "Fuer Business-Presets (offene-bestellungen, ueberfaellige-lieferungen) stattdessen openxe-business-query nutzen."
+    "Status preset. Erlaubte Werte (exakt): offen | freigegeben | bestellt | angemahnt | empfangen | aktiv. " +
+    "Andere Werte werden mit Fehler abgewiesen. Fuer hoehere Business-Filter (z.B. offene bzw. ueberfaellige Bestellungen) " +
+    "nutze das separate Tool openxe-business-query — diese Namen gehoeren NICHT in dieses Feld."
   ),
   format: z.string().optional().describe("Output format: table, csv, ids"),
   aggregate: z.string().optional().describe("Aggregate: count, sum_field, avg_field, min_field, max_field, groupBy_field"),

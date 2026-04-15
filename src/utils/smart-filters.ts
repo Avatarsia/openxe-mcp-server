@@ -622,3 +622,14 @@ export function applyStatusPreset(records: any[], entity: string, preset: string
   if (!filterFn) return records;
   return records.filter(filterFn);
 }
+
+/**
+ * Return the list of status_preset names registered for an entity,
+ * or an empty list if the entity is unknown. Useful for callers that
+ * want to validate user input up-front instead of silently ignoring
+ * unknown presets.
+ */
+export function getStatusPresetNames(entity: string): string[] {
+  const entityPresets = STATUS_PRESETS[entity];
+  return entityPresets ? Object.keys(entityPresets) : [];
+}

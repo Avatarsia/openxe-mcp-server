@@ -140,6 +140,98 @@ describe("Procurement Tools — list-purchase-orders", () => {
     }, 30000);
   });
 
+  describe("status_preset validation", () => {
+    const ordersFixture = [
+      { id: "1", belegnr: "BS-001", status: "offen",       name: "A", lieferantennummer: "L1", datum: "2026-01-01", gesamtsumme: "100.00" },
+      { id: "2", belegnr: "BS-002", status: "freigegeben", name: "B", lieferantennummer: "L2", datum: "2026-01-02", gesamtsumme: "200.00" },
+      { id: "3", belegnr: "BS-003", status: "bestellt",    name: "C", lieferantennummer: "L3", datum: "2026-01-03", gesamtsumme: "300.00" },
+      { id: "4", belegnr: "BS-004", status: "angemahnt",   name: "D", lieferantennummer: "L4", datum: "2026-01-04", gesamtsumme: "400.00" },
+      { id: "5", belegnr: "BS-005", status: "empfangen",   name: "E", lieferantennummer: "L5", datum: "2026-01-05", gesamtsumme: "500.00" },
+    ];
+
+    function mockBelegeListReturns(orders: any[]) {
+      mockClient.legacyPost.mockImplementation((endpoint: string) => {
+        if (endpoint === "BelegeList") {
+          return Promise.resolve({ success: true, data: orders });
+        }
+        return Promise.resolve({ success: false, data: null });
+      });
+    }
+
+    it("valid preset 'bestellt' reduces to orders with status=bestellt", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { status_preset: "bestellt" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data).toHaveLength(1);
+      expect(parsed.data[0].status).toBe("bestellt");
+      expect(parsed.data[0].id).toBe("3");
+    });
+
+    it("valid aggregate preset 'aktiv' reduces to offen/freigegeben/bestellt/angemahnt", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { status_preset: "aktiv" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data).toHaveLength(4);
+      const statuses = parsed.data.map((d: any) => d.status).sort();
+      expect(statuses).toEqual(["angemahnt", "bestellt", "freigegeben", "offen"]);
+    });
+
+    it("invalid preset 'ueberfaellige-lieferungen' returns isError with guidance to openxe-business-query", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { status_preset: "ueberfaellige-lieferungen" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBe(true);
+      const text = result.content[0].text;
+      expect(text).toContain("Unbekanntes status_preset");
+      expect(text).toContain("ueberfaellige-lieferungen");
+      expect(text).toContain("offen");
+      expect(text).toContain("aktiv");
+      expect(text).toContain("openxe-business-query");
+
+      // API must NOT have been hit at all.
+      expect(mockClient.legacyPost).not.toHaveBeenCalled();
+    });
+
+    it("invalid preset 'garbage' returns isError and lists allowed values", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { status_preset: "garbage" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBe(true);
+      const text = result.content[0].text;
+      expect(text).toContain("Unbekanntes status_preset");
+      expect(text).toContain("garbage");
+      // All STATUS_PRESETS.purchaseOrders keys must appear in the error text.
+      for (const name of ["offen", "freigegeben", "bestellt", "angemahnt", "empfangen", "aktiv"]) {
+        expect(text).toContain(name);
+      }
+      expect(mockClient.legacyPost).not.toHaveBeenCalled();
+    });
+  });
+
   describe("BelegeList authoritative empty", () => {
     it("treats BelegeList success+empty as authoritative zero orders (no scan)", async () => {
       // When BelegeList answers successfully with an empty list, the helper
