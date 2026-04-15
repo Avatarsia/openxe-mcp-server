@@ -2,7 +2,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { applySlimMode, truncateWithWarning, SLIM_FIELDS, MAX_LIST_RESULTS, filterDeleted, fetchFilteredList, FilteredListResult, FETCH_ALL_SAFETY_CAP } from "../utils/field-filter.js";
-import { applyAggregate, AggregateOp, applySort, applyLimit, applyFields, parseZeitraum, formatAsTable, formatAsCsv, formatAsCsvPositions, formatAsIds, applyWhere, applyStatusPreset, filterArrayElementsByWhere, WhereClause } from "../utils/smart-filters.js";
+import { applyAggregate, AggregateOp, applySort, applyLimit, applyFields, parseZeitraum, formatAsTable, formatAsCsv, formatAsCsvPositions, formatAsIds, applyWhere, applyStatusPreset, getStatusPresetNames, filterArrayElementsByWhere, WhereClause } from "../utils/smart-filters.js";
 
 // --- Aggregate schema ---
 
@@ -48,7 +48,10 @@ const ListFilters = z.object({
     .string()
     .optional()
     .describe(
-      "Status-Shortcut: 'offen', 'unbezahlt', 'ueberfaellig', 'bezahlt', 'entwurf', 'mahnkandidaten'"
+      "Status preset. Welche Werte erlaubt sind, haengt vom konkreten List-Tool ab " +
+      "(quotes: offen/angenommen/abgelehnt; orders: offen/entwurf; invoices: offen/unbezahlt/bezahlt/ueberfaellig/entwurf/mahnkandidaten; " +
+      "lieferscheine und gutschriften unterstuetzen status_preset derzeit nicht). " +
+      "Unbekannte oder nicht unterstuetzte Werte werden mit Fehler abgewiesen."
     ),
   include_deleted: z
     .boolean()
@@ -154,10 +157,15 @@ const DOC_TYPES: DocType[] = [
 // --- Build tool definitions ---
 
 export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = DOC_TYPES.flatMap(
-  (dt) => [
+  (dt) => {
+    const validPresets = dt.statusEntity ? getStatusPresetNames(dt.statusEntity) : [];
+    const presetHint = validPresets.length > 0
+      ? `status_preset (${validPresets.join(" | ")})`
+      : "status_preset wird fuer dieses Tool nicht unterstuetzt";
+    return [
     {
       name: dt.listName,
-      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Gibt eine kompakte Liste zurueck (nur Schluesselfelder: id, belegnr, status, name, datum, summe). Fuer alle Details eines Eintrags nutze ${dt.getName}. Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte, zeitraum (z.B. 'dieser-monat', 'Q3-2025'), status_preset (z.B. 'offen', 'unbezahlt', 'ueberfaellig', 'bezahlt', 'entwurf', 'mahnkandidaten'). Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.`,
+      description: `${dt.labelDe} auflisten (GET /v1/belege/${dt.path}). Gibt eine kompakte Liste zurueck (nur Schluesselfelder: id, belegnr, status, name, datum, summe). Fuer alle Details eines Eintrags nutze ${dt.getName}. Optionale Filter: belegnr, kundennummer, status, datum_gte, datum_lte, zeitraum (z.B. 'dieser-monat', 'Q3-2025'), ${presetHint}. Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt.`,
       inputSchema: zodToJsonSchema(ListFilters) as Record<string, unknown>,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
@@ -167,7 +175,8 @@ export const DOCUMENT_READ_TOOL_DEFINITIONS: ToolDefinition[] = DOC_TYPES.flatMa
       inputSchema: zodToJsonSchema(GetByIdInput) as Record<string, unknown>,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-  ]
+  ];
+  }
 );
 
 // --- Lookup maps ---
@@ -256,6 +265,31 @@ export async function handleDocumentReadTool(
   const listPath = LIST_TOOL_PATH[toolName];
   if (listPath) {
     const filters = ListFilters.parse(args);
+    // Strict status_preset validation -- reject unknown or unsupported values
+    // BEFORE any API call so invalid input never silently reaches the server
+    // or the client-side applyStatusPreset no-op path.
+    if (filters.status_preset) {
+      const entity = LIST_TOOL_STATUS_ENTITY[toolName];
+      if (!entity) {
+        return {
+          content: [{
+            type: "text",
+            text: `Tool "${toolName}" unterstuetzt kein status_preset. Nutze stattdessen den direkten "status"-Filter oder ein anderes List-Tool.`,
+          }],
+          isError: true,
+        };
+      }
+      const valid = getStatusPresetNames(entity);
+      if (!valid.includes(filters.status_preset)) {
+        return {
+          content: [{
+            type: "text",
+            text: `Unbekanntes status_preset: "${filters.status_preset}". Erlaubt fuer ${toolName}: ${valid.join(" | ")}.`,
+          }],
+          isError: true,
+        };
+      }
+    }
     // Resolve zeitraum shortcut into datum_gte / datum_lte
     if (filters.zeitraum) {
       const { von, bis } = parseZeitraum(filters.zeitraum);

@@ -216,20 +216,68 @@ describe("Document Read Tools", () => {
     expect(parsed.data.map((d) => d.id)).toEqual([1, 2]);
   });
 
-  it("ignores unknown status_preset and returns all records", async () => {
-    mockPaginatedGet([
-      { id: 1, belegnr: "RE-001", zahlungsstatus: "offen", name: "A", kundennummer: "K1" },
-      { id: 2, belegnr: "RE-002", zahlungsstatus: "bezahlt", name: "B", kundennummer: "K2" },
-    ]);
-
+  it("rejects unknown status_preset with isError instead of silently ignoring", async () => {
     const result = await handleDocumentReadTool(
       "openxe-list-invoices",
       { status_preset: "nonexistent" },
       mockClient as unknown as OpenXEClient
     );
 
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Unbekanntes status_preset");
+    expect(result.content[0].text).toContain("nonexistent");
+    expect(result.content[0].text).toContain("openxe-list-invoices");
+    // No API call should have been made.
+    expect(mockClient.get).not.toHaveBeenCalled();
+  });
+
+  it("rejects status_preset valid for other entity (mahnkandidaten on quotes)", async () => {
+    const result = await handleDocumentReadTool(
+      "openxe-list-quotes",
+      { status_preset: "mahnkandidaten" },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Unbekanntes status_preset");
+    expect(result.content[0].text).toContain("mahnkandidaten");
+    expect(mockClient.get).not.toHaveBeenCalled();
+  });
+
+  it("filters quotes by status_preset='angenommen' (only beauftragt)", async () => {
+    mockPaginatedGet([
+      { id: 1, belegnr: "AN-001", status: "beauftragt", name: "A", kundennummer: "K1" },
+      { id: 2, belegnr: "AN-002", status: "freigegeben", name: "B", kundennummer: "K2" },
+      { id: 3, belegnr: "AN-003", status: "beauftragt", name: "C", kundennummer: "K3" },
+    ]);
+
+    const result = await handleDocumentReadTool(
+      "openxe-list-quotes",
+      { status_preset: "angenommen" },
+      mockClient as unknown as OpenXEClient
+    );
+
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.data).toHaveLength(2);
+    expect(parsed.data.map((d) => d.id)).toEqual([1, 3]);
+  });
+
+  it("filters orders by status_preset='entwurf'", async () => {
+    mockPaginatedGet([
+      { id: 1, belegnr: "", status: "angelegt", name: "A", kundennummer: "K1" },
+      { id: 2, belegnr: "AU-002", status: "freigegeben", name: "B", kundennummer: "K2" },
+      { id: 3, belegnr: "AU-003", status: "angelegt", name: "C", kundennummer: "K3" },
+    ]);
+
+    const result = await handleDocumentReadTool(
+      "openxe-list-orders",
+      { status_preset: "entwurf" },
+      mockClient as unknown as OpenXEClient
+    );
+
+    const parsed = JSON.parse(result.content[0].text);
+    // entwurf: !belegnr OR status === "angelegt"
+    expect(parsed.data.map((d) => d.id).sort()).toEqual([1, 3]);
   });
 
   // --- csv-positions: per-position filter + truncation warning ---
@@ -371,20 +419,29 @@ describe("Document Read Tools", () => {
     });
   });
 
-  it("ignores status_preset for entities without presets (delivery-notes)", async () => {
-    mockPaginatedGet([
-      { id: 1, belegnr: "LS-001", status: "freigegeben", name: "A", kundennummer: "K1" },
-      { id: 2, belegnr: "LS-002", status: "angelegt", name: "B", kundennummer: "K2" },
-    ]);
-
+  it("rejects status_preset on delivery-notes (entity without presets)", async () => {
     const result = await handleDocumentReadTool(
       "openxe-list-delivery-notes",
       { status_preset: "offen" },
       mockClient as unknown as OpenXEClient
     );
 
-    const parsed = JSON.parse(result.content[0].text);
-    // No presets for delivery notes, so all records returned
-    expect(parsed.data).toHaveLength(2);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("unterstuetzt kein status_preset");
+    expect(result.content[0].text).toContain("openxe-list-delivery-notes");
+    expect(mockClient.get).not.toHaveBeenCalled();
+  });
+
+  it("rejects any status_preset on credit-memos (entity without presets)", async () => {
+    const result = await handleDocumentReadTool(
+      "openxe-list-credit-memos",
+      { status_preset: "bezahlt" },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("unterstuetzt kein status_preset");
+    expect(result.content[0].text).toContain("openxe-list-credit-memos");
+    expect(mockClient.get).not.toHaveBeenCalled();
   });
 });
