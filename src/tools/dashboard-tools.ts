@@ -3,6 +3,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { fetchFilteredList, FETCH_ALL_SAFETY_CAP } from "../utils/field-filter.js";
 import { fetchPurchaseOrdersWithMeta, PURCHASE_ORDER_SCAN_CAP } from "../utils/purchase-order-fetch.js";
+import { localDateString } from "../utils/local-date.js";
 
 /**
  * KPIs must never under-report silently. If fetchFilteredList had to stop
@@ -105,11 +106,11 @@ function weekStart(now: Date): string {
   const day = d.getDay();
   const diff = day === 0 ? 6 : day - 1;
   d.setDate(d.getDate() - diff);
-  return d.toISOString().split("T")[0];
+  return localDateString(d);
 }
 
 function today(now: Date): string {
-  return now.toISOString().split("T")[0];
+  return localDateString(now);
 }
 
 const MONTH_NAMES = [
@@ -215,7 +216,7 @@ async function kpiUeberfaelligeRechnungen(client: OpenXEClient, now: Date): Prom
   );
   const cutoff = new Date(now);
   cutoff.setDate(cutoff.getDate() - 30);
-  const cutoffStr = cutoff.toISOString().split("T")[0];
+  const cutoffStr = localDateString(cutoff);
 
   const ueberfaellig = result.data.filter((r: any) => {
     const soll = parseFloat(r.soll) || 0;

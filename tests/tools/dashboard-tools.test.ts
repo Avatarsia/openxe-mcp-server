@@ -94,6 +94,39 @@ describe("Dashboard Tools", () => {
     it("monthLabel returns German month + year", () => {
       expect(monthLabel(NOW)).toBe("April 2026");
     });
+
+    // Regression: before the localDateString migration, toISOString() on a
+    // local-constructed Date at local-midnight+offset produced the previous
+    // UTC day. Here we pick a moment that is unambiguously local 2026-04-01
+    // under the host timezone (via local constructor), so the helpers must
+    // yield 2026-04-01 regardless of host TZ.
+    //
+    // IMPORTANT: These tests are skipped on pure-UTC hosts (common default in
+    // CI). Under UTC both the old toISOString()-based impl and the new
+    // localDateString() impl return the same string, so the regression is
+    // vacuous. Run locally with TZ=Europe/Berlin (or any non-zero offset) to
+    // actually exercise the bug reproduction.
+    const isUtcHost = new Date().getTimezoneOffset() === 0;
+    describe.skipIf(isUtcHost)("local-date regression (timezone)", () => {
+      const localMidnightPlus30 = new Date(2026, 3, 1, 0, 30, 0, 0);
+
+      it("today returns local calendar day at local 00:30", () => {
+        expect(today(localMidnightPlus30)).toBe("2026-04-01");
+      });
+
+      it("monthStart returns local first-of-month at local 00:30", () => {
+        expect(monthStart(localMidnightPlus30)).toBe("2026-04-01");
+      });
+
+      it("yearStart returns local Jan 1 at local 00:30", () => {
+        expect(yearStart(localMidnightPlus30)).toBe("2026-01-01");
+      });
+
+      it("weekStart returns local Monday (of week containing local April 1)", () => {
+        // April 1 2026 is a Wednesday, so Monday = March 30.
+        expect(weekStart(localMidnightPlus30)).toBe("2026-03-30");
+      });
+    });
   });
 
   // --- Utility helpers ---

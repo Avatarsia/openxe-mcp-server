@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { applyWhere, applySort, applyLimit, pickFields, applyFields, parseZeitraum, applyAggregate, applyStatusPreset, STATUS_PRESETS, WhereClause, AggregateOp } from "../../src/utils/smart-filters.js";
+import { localDateString } from "../../src/utils/local-date.js";
 
 const sampleRecords = [
   { id: 1, name: "Alpha GmbH", city: "Berlin", amount: "100.50", status: "active", email: "alpha@test.de" },
@@ -882,14 +883,14 @@ describe("STATUS_PRESETS", () => {
     const fn = STATUS_PRESETS.invoices["ueberfaellig"];
     const old = new Date();
     old.setDate(old.getDate() - 45);
-    expect(fn({ zahlungsstatus: "offen", datum: old.toISOString().split("T")[0] })).toBe(true);
+    expect(fn({ zahlungsstatus: "offen", datum: localDateString(old) })).toBe(true);
   });
 
   it("invoices.ueberfaellig: unpaid within 30 days is not overdue", () => {
     const fn = STATUS_PRESETS.invoices["ueberfaellig"];
     const recent = new Date();
     recent.setDate(recent.getDate() - 10);
-    expect(fn({ zahlungsstatus: "offen", datum: recent.toISOString().split("T")[0] })).toBe(false);
+    expect(fn({ zahlungsstatus: "offen", datum: localDateString(recent) })).toBe(false);
   });
 
   it("invoices.entwurf matches records without belegnr or status angelegt", () => {
@@ -909,14 +910,14 @@ describe("STATUS_PRESETS", () => {
     const fn = STATUS_PRESETS.invoices["mahnkandidaten"];
     const old = new Date();
     old.setDate(old.getDate() - 30);
-    expect(fn({ zahlungsstatus: "offen", mahnwesen_gesperrt: "1", datum: old.toISOString().split("T")[0] })).toBe(false);
+    expect(fn({ zahlungsstatus: "offen", mahnwesen_gesperrt: "1", datum: localDateString(old) })).toBe(false);
   });
 
   it("invoices.mahnkandidaten: unpaid, not locked, older than 14 days", () => {
     const fn = STATUS_PRESETS.invoices["mahnkandidaten"];
     const old = new Date();
     old.setDate(old.getDate() - 20);
-    expect(fn({ zahlungsstatus: "offen", mahnwesen_gesperrt: "0", datum: old.toISOString().split("T")[0] })).toBe(true);
+    expect(fn({ zahlungsstatus: "offen", mahnwesen_gesperrt: "0", datum: localDateString(old) })).toBe(true);
   });
 
   it("quotes.offen matches freigegeben and angelegt", () => {

@@ -4,6 +4,7 @@ import { OpenXEClient } from "../client/openxe-client.js";
 import { parseZeitraum } from "../utils/smart-filters.js";
 import { fetchFilteredList, FETCH_ALL_SAFETY_CAP } from "../utils/field-filter.js";
 import { fetchPurchaseOrdersWithMeta, PURCHASE_ORDER_SCAN_CAP } from "../utils/purchase-order-fetch.js";
+import { localDateString } from "../utils/local-date.js";
 
 /**
  * Append a visible warning if any source query hit the safety cap. Keeps the
@@ -49,7 +50,7 @@ function sumField(records: any[], field: string): number {
 }
 
 function todayStr(): string {
-  return new Date().toISOString().split("T")[0];
+  return localDateString(new Date());
 }
 
 function daysBetween(dateStr1: string, dateStr2: string): number {
@@ -75,7 +76,7 @@ function resolveZeitraum(zeitraum: string): { von: string; bis: string } {
     case "letzte-12-monate": {
       const d = new Date(now);
       d.setMonth(d.getMonth() - 12);
-      const von = d.toISOString().split("T")[0];
+      const von = localDateString(d);
       return { von, bis: todayStr() };
     }
     default:
@@ -429,7 +430,7 @@ async function handleOpenItemsReport(
       const zahlungszieltage = parseInt(r.zahlungszieltage) || 30;
       const datumDate = new Date(r.datum);
       datumDate.setDate(datumDate.getDate() + zahlungszieltage);
-      const faelligAm = datumDate.toISOString().split("T")[0];
+      const faelligAm = localDateString(datumDate);
       const ueberfaelligTage = Math.max(0, daysBetween(faelligAm, todayDate));
 
       return {
@@ -490,7 +491,7 @@ async function handleOpenItemsReport(
       const zahlungszieltage = parseInt(r.zahlungszieltage) || 30;
       const datumDate = new Date(r.datum);
       datumDate.setDate(datumDate.getDate() + zahlungszieltage);
-      const faelligAm = datumDate.toISOString().split("T")[0];
+      const faelligAm = localDateString(datumDate);
       const ueberfaelligTage = Math.max(0, daysBetween(faelligAm, todayDate));
 
       let bucket: string;
@@ -965,12 +966,12 @@ function getPeriodDates(
       const prevEnd = new Date(year, month, 0);
       return {
         current: {
-          von: currStart.toISOString().split("T")[0],
-          bis: currEnd.toISOString().split("T")[0],
+          von: localDateString(currStart),
+          bis: localDateString(currEnd),
         },
         previous: {
-          von: prevStart.toISOString().split("T")[0],
-          bis: prevEnd.toISOString().split("T")[0],
+          von: localDateString(prevStart),
+          bis: localDateString(prevEnd),
         },
         label: "Monat",
       };
@@ -983,12 +984,12 @@ function getPeriodDates(
       const prevQEnd = new Date(year, currQ * 3, 0);
       return {
         current: {
-          von: currStart.toISOString().split("T")[0],
-          bis: currEnd.toISOString().split("T")[0],
+          von: localDateString(currStart),
+          bis: localDateString(currEnd),
         },
         previous: {
-          von: prevQStart.toISOString().split("T")[0],
-          bis: prevQEnd.toISOString().split("T")[0],
+          von: localDateString(prevQStart),
+          bis: localDateString(prevQEnd),
         },
         label: "Quartal",
       };

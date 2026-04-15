@@ -5,6 +5,7 @@ import { DateString } from "../schemas/common.js";
 import { fetchFilteredList, FilteredListResult, MAX_LIST_RESULTS, applySlimMode } from "../utils/field-filter.js";
 import { applyAggregate, AggregateOp, applySort, applyLimit, applyFields, applyWhere, formatAsTable, formatAsCsv, formatAsIds } from "../utils/smart-filters.js";
 import { truncateWithWarning } from "../utils/field-filter.js";
+import { localDateString } from "../utils/local-date.js";
 
 const SubscriptionCreateInput = z.object({
   adresse: z.number().int().positive().describe("Customer address ID"),
@@ -384,7 +385,7 @@ export async function handleSubscriptionTool(
       // Auto-set datum and uhrzeit if not provided
       if (!data.datum) {
         const now = new Date();
-        data.datum = now.toISOString().split('T')[0]; // YYYY-MM-DD
+        data.datum = localDateString(now); // YYYY-MM-DD (local)
       }
       if (!data.uhrzeit) {
         const now = new Date();
@@ -415,7 +416,7 @@ export async function handleSubscriptionTool(
       const data: Record<string, unknown> = { ...input };
       // Auto-set creation timestamp
       if (!data.datum_angelegt) {
-        data.datum_angelegt = new Date().toISOString().split('T')[0];
+        data.datum_angelegt = localDateString(new Date());
       }
       if (!data.zeit_angelegt) {
         data.zeit_angelegt = new Date().toTimeString().split(' ')[0];

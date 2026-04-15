@@ -5,6 +5,7 @@ import {
 } from "../../src/tools/business-query-tools.js";
 import { BUSINESS_PRESETS } from "../../src/utils/smart-filters.js";
 import { OpenXEClient } from "../../src/client/openxe-client.js";
+import { localDateString } from "../../src/utils/local-date.js";
 
 describe("Business Query Tools", () => {
   let mockClient: { get: ReturnType<typeof vi.fn> };
@@ -182,8 +183,8 @@ describe("Business Query Tools", () => {
 
   describe("preset: ueberfaellige-rechnungen", () => {
     it("filters to invoices older than 30 days and unpaid", async () => {
-      const oldDate = new Date(Date.now() - 60 * 86400000).toISOString().split("T")[0]; // 60 days ago
-      const recentDate = new Date(Date.now() - 10 * 86400000).toISOString().split("T")[0]; // 10 days ago
+      const oldDate = localDateString(new Date(Date.now() - 60 * 86400000)); // 60 days ago
+      const recentDate = localDateString(new Date(Date.now() - 10 * 86400000)); // 10 days ago
 
       mockPaginatedGet([
         { id: 30, belegnr: "RE-010", name: "Old Unpaid", datum: oldDate, soll: "500.00", ist: "0.00", zahlungsstatus: "offen" },

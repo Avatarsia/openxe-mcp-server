@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { OpenXEClient } from "../../src/client/openxe-client.js";
 import {
   handleSubscriptionTool,
   SUBSCRIPTION_TOOL_DEFINITIONS,
 } from "../../src/tools/subscription-tools.js";
+import { localDateString } from "../../src/utils/local-date.js";
 
 describe("Subscription Tools", () => {
   let mockClient: {
@@ -30,7 +31,7 @@ describe("Subscription Tools", () => {
 
   describe("openxe-create-crm-document", () => {
     it("auto-sets datum to today when not provided", async () => {
-      const today = new Date().toISOString().split("T")[0];
+      const today = localDateString(new Date());
 
       await handleSubscriptionTool(
         "openxe-create-crm-document",
@@ -126,7 +127,7 @@ describe("Subscription Tools", () => {
 
   describe("openxe-create-resubmission", () => {
     it("auto-sets datum_angelegt to today when not provided", async () => {
-      const today = new Date().toISOString().split("T")[0];
+      const today = localDateString(new Date());
 
       await handleSubscriptionTool(
         "openxe-create-resubmission",
@@ -244,6 +245,55 @@ describe("Subscription Tools", () => {
           adresse: 3,
         })
       );
+    });
+  });
+
+  // --- Regression: timezone-safe local date defaults ---
+  //
+  // IMPORTANT: Skipped on pure-UTC hosts (common in CI). The regression (old
+  // toISOString() returning previous UTC day at local-midnight+offset) only
+  // reproduces when host TZ has a non-zero UTC offset. Under UTC both the old
+  // and new impls yield the same string, making the test vacuous. Run locally
+  // with TZ=Europe/Berlin (or any non-UTC zone) to exercise these.
+  const isUtcHost = new Date().getTimezoneOffset() === 0;
+  describe.skipIf(isUtcHost)("local-date regression (timezone)", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("crm-document datum uses local calendar day at local midnight (not UTC)", async () => {
+      // Local April 1 at 00:30 — under any timezone with positive UTC offset
+      // (e.g. Europe/Berlin), the old toISOString()-path serialized as
+      // previous-day-in-UTC. localDateString must always yield 2026-04-01.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 3, 1, 0, 30, 0, 0));
+
+      await handleSubscriptionTool(
+        "openxe-create-crm-document",
+        { typ: "notiz", betreff: "TZ", adresse_from: 1 },
+        mockClient as unknown as OpenXEClient
+      );
+
+      const postedData = mockClient.post.mock.calls[0][1];
+      expect(postedData.datum).toBe("2026-04-01");
+    });
+
+    it("resubmission datum_angelegt uses local calendar day at local midnight (not UTC)", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 3, 1, 0, 30, 0, 0));
+
+      await handleSubscriptionTool(
+        "openxe-create-resubmission",
+        {
+          bezeichnung: "TZ Test",
+          datum_erinnerung: "2026-04-05",
+          zeit_erinnerung: "10:00:00",
+        },
+        mockClient as unknown as OpenXEClient
+      );
+
+      const postedData = mockClient.post.mock.calls[0][1];
+      expect(postedData.datum_angelegt).toBe("2026-04-01");
     });
   });
 
