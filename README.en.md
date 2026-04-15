@@ -118,7 +118,7 @@ All list queries support client-side filters:
 - **Dot notation:** field names like `positionen.nummer` iterate over nested array fields of a document. A single condition matches "at least one element". Multiple conditions sharing the same array prefix (e.g. `positionen.nummer` + `positionen.menge`) are paired element-wise — the document only matches if the **same** array element satisfies all of them.
 - **sort / limit:** sort results and cap the number of rows
 - **zeitraum:** `dieser-monat`, `letzter-monat`, `letzte-30-tage`, `Q1-2026`, `2025`
-- **status_preset:** `offene-rechnungen`, `nicht-versendet`, `ueberfaellige-rechnungen`, etc.
+- **status_preset** (on document list tools): `offen`, `unbezahlt`, `ueberfaellig`, `bezahlt`, `entwurf`, `mahnkandidaten`. (The values `offene-rechnungen`, `nicht-versendet`, `ueberfaellige-rechnungen` etc. are separate **business-query** presets — see the `openxe-business-query` tool / `business-query` action.)
 - **aggregate:** `count`, `sum_feld`, `avg_feld`, `groupBy_feld`
 - **format:** `table`, `csv`, `ids`, `csv-positions` (for documents: emits one CSV row per line item instead of per document, with header fields as a prefix followed by line item fields. When the where filter targets `positionen.*`, only the matching positions are exported.)
 

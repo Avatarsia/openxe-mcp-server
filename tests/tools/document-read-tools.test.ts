@@ -304,7 +304,7 @@ describe("Document Read Tools", () => {
       expect(csv).toContain("ART-002");
     });
 
-    it("appends a trailing WARNUNG line when the fetch was truncated", async () => {
+    it("returns the WARNUNG as a separate content item when the fetch was truncated", async () => {
       // Simulate a fetchAll run that hits FETCH_ALL_SAFETY_CAP (10000).
       // Page 1 returns 10000 items, subsequent pages are never reached because
       // the safety-cap break triggers first. This sets meta.truncated=true.
@@ -333,12 +333,41 @@ describe("Document Read Tools", () => {
         mockClient as unknown as OpenXEClient
       );
 
+      // content[0] stays a pure CSV stream so downstream parsers (Excel,
+      // pandas) can ingest it unchanged. The truncation warning lives in a
+      // separate TextContent so the LLM still sees it.
       const csv = result.content[0].text;
-      // Warning is appended after the CSV body so stricter CSV parsers
-      // (Excel, pandas default) still see a clean header as line 1.
-      const firstLine = csv.split("\n", 1)[0];
-      expect(firstLine.startsWith("#")).toBe(false);
-      expect(csv).toMatch(/\n\nWARNUNG: Safety-Cap .* 10000 /);
+      expect(csv.split("\n", 1)[0].startsWith("#")).toBe(false);
+      expect(csv).not.toMatch(/WARNUNG/);
+
+      expect(result.content).toHaveLength(2);
+      expect(result.content[1].text).toMatch(/^WARNUNG: Safety-Cap .* 10000 /);
+    });
+
+    it("returns a single content item (no warning) when the fetch was not truncated", async () => {
+      mockClient.get.mockResolvedValue({
+        data: {
+          data: [
+            {
+              id: 1,
+              belegnr: "RE-1",
+              kundennummer: "K1",
+              datum: "2026-01-01",
+              positionen: [{ nummer: "ART-1", bezeichnung: "X", menge: "1", preis: "1" }],
+            },
+          ],
+          pagination: undefined,
+        },
+      });
+
+      const result = await handleDocumentReadTool(
+        "openxe-list-invoices",
+        { format: "csv-positions" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.content).toHaveLength(1);
+      expect(result.content[0].text).not.toMatch(/WARNUNG/);
     });
   });
 

@@ -338,14 +338,18 @@ export async function handleDocumentReadTool(
         CSV_POSITIONS_HEADER_FIELDS,
         CSV_POSITIONS_POSITION_FIELDS,
       );
-      // Surface truncation as a trailing warning, matching the format used by
-      // report-tools.ts. Appending (not prepending) keeps the CSV header intact
-      // for downstream parsers (Excel, pandas) that don't recognise `#` as a
-      // comment marker.
-      const output = result.meta.truncated
-        ? `${csv}\n\nWARNUNG: Safety-Cap von ${FETCH_ALL_SAFETY_CAP} Belegen erreicht — Ergebnis ist eine Untergrenze.`
-        : csv;
-      return { content: [{ type: "text", text: output }] };
+      // content[0] stays a clean RFC-4180 CSV stream that downstream parsers
+      // (Excel, pandas, COPY ... FROM STDIN) can ingest unchanged. If the
+      // underlying fetch was truncated, the warning rides as a separate
+      // TextContent item so the LLM still sees it without polluting the CSV.
+      const content: { type: "text"; text: string }[] = [{ type: "text", text: csv }];
+      if (result.meta.truncated) {
+        content.push({
+          type: "text",
+          text: `WARNUNG: Safety-Cap von ${FETCH_ALL_SAFETY_CAP} Belegen erreicht — Ergebnis ist eine Untergrenze.`,
+        });
+      }
+      return { content };
     }
 
     // Slim or fields projection
