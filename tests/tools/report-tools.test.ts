@@ -156,6 +156,46 @@ describe("Report Tools", () => {
       // ueberfaellig_tage is index 7
       expect(cells[7]).toBe("0");
     });
+
+    it("regression: zahlungszieltage=0 is honored (not defaulted to 30)", async () => {
+      // With the old `parseInt("0") || 30` bug, a zahlungszieltage of 0
+      // (sofort faellig) would falsely default to 30 days. After migration
+      // to invoiceDueDate/invoiceOverdueDays, 0 must be respected.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 3, 5, 12, 0, 0, 0)); // April 5 2026 local
+
+      mockClient.get.mockResolvedValue({
+        data: [
+          {
+            id: 1,
+            belegnr: "RE-200",
+            name: "Sofort Kunde",
+            kundennummer: "K-2",
+            datum: "2026-04-01",
+            zahlungszieltage: "0",
+            soll: "500.00",
+            ist: "0.00",
+            status: "freigegeben",
+          },
+        ],
+      });
+
+      const result = await handleReportTool(
+        "openxe-report-open-items",
+        { mode: "liste" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      const text = result.content[0].text;
+      const lines = text.split("\n");
+      const dataLine = lines.find((l) => l.includes("RE-200"));
+      expect(dataLine).toBeDefined();
+      const cells = dataLine!.split("|").map((c) => c.trim());
+      // faellig_am (index 3) must be the invoice date itself, not +30 days.
+      expect(cells[3]).toBe("2026-04-01");
+      // ueberfaellig_tage (index 7): today=2026-04-05, due=2026-04-01 -> 4
+      expect(cells[7]).toBe("4");
+    });
   });
 
   // --- Integration: Open items report mode=altersstruktur ---
@@ -223,6 +263,51 @@ describe("Report Tools", () => {
       expect(aktuellRow.summe).toBe("200");
       expect(bucket31_60.anzahl).toBe("1");
       expect(bucket31_60.summe).toBe("100");
+    });
+
+    it("regression: zahlungszieltage=0 puts invoice into 1-30 Tage, not aktuell", async () => {
+      // With the old `parseInt("0") || 30` bug, an invoice with datum
+      // 2026-04-01 and zahlungszieltage=0 would compute faellig=2026-05-01
+      // and land in "aktuell". After migration it must land in "1-30 Tage".
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 3, 5, 12, 0, 0, 0)); // April 5 2026 local
+
+      mockClient.get.mockResolvedValue({
+        data: [
+          {
+            id: 1,
+            belegnr: "RE-300",
+            name: "Sofort Kunde",
+            kundennummer: "K-3",
+            datum: "2026-04-01",
+            zahlungszieltage: "0",
+            soll: "300.00",
+            ist: "0.00",
+            status: "freigegeben",
+          },
+        ],
+      });
+
+      const result = await handleReportTool(
+        "openxe-report-open-items",
+        { mode: "altersstruktur" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      const text = result.content[0].text;
+      const lines = text.split("\n");
+      const bucketLine = (name: string) => lines.find((l) => l.includes(name));
+      const parseRow = (line: string) => {
+        const cells = line.split("|").map((c) => c.trim());
+        return { bucket: cells[0], anzahl: cells[1], summe: cells[2] };
+      };
+
+      const bucket1_30 = parseRow(bucketLine("1-30 Tage")!);
+      const aktuellRow = parseRow(bucketLine("aktuell")!);
+
+      expect(bucket1_30.anzahl).toBe("1");
+      expect(bucket1_30.summe).toBe("300");
+      expect(aktuellRow.anzahl).toBe("0");
     });
   });
 });

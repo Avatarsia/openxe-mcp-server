@@ -5,6 +5,7 @@ import { parseZeitraum } from "../utils/smart-filters.js";
 import { fetchFilteredList, FETCH_ALL_SAFETY_CAP } from "../utils/field-filter.js";
 import { fetchPurchaseOrdersWithMeta, PURCHASE_ORDER_SCAN_CAP } from "../utils/purchase-order-fetch.js";
 import { localDateString, parseLocalDate } from "../utils/local-date.js";
+import { invoiceDueDate, invoiceOverdueDays } from "../utils/invoice-aging.js";
 
 /**
  * Append a visible warning if any source query hit the safety cap. Keeps the
@@ -436,11 +437,8 @@ async function handleOpenItemsReport(
       const soll = parseFloat(r.soll) || 0;
       const ist = parseFloat(r.ist) || 0;
       const offen = round2(soll - ist);
-      const zahlungszieltage = parseInt(r.zahlungszieltage) || 30;
-      const datumDate = parseLocalDate(r.datum);
-      datumDate.setDate(datumDate.getDate() + zahlungszieltage);
-      const faelligAm = localDateString(datumDate);
-      const ueberfaelligTage = Math.max(0, daysBetween(faelligAm, todayDate));
+      const faelligAm = invoiceDueDate(r.datum, r.zahlungszieltage);
+      const ueberfaelligTage = invoiceOverdueDays(r, todayDate);
 
       return {
         belegnr: r.belegnr || "",
@@ -497,11 +495,8 @@ async function handleOpenItemsReport(
       const soll = parseFloat(r.soll) || 0;
       const ist = parseFloat(r.ist) || 0;
       const offen = soll - ist;
-      const zahlungszieltage = parseInt(r.zahlungszieltage) || 30;
-      const datumDate = parseLocalDate(r.datum);
-      datumDate.setDate(datumDate.getDate() + zahlungszieltage);
-      const faelligAm = localDateString(datumDate);
-      const ueberfaelligTage = Math.max(0, daysBetween(faelligAm, todayDate));
+      // altersstruktur only needs the day count, not the due date itself.
+      const ueberfaelligTage = invoiceOverdueDays(r, todayDate);
 
       let bucket: string;
       if (ueberfaelligTage === 0) bucket = "aktuell";
