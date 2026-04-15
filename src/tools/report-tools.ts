@@ -4,7 +4,7 @@ import { OpenXEClient } from "../client/openxe-client.js";
 import { parseZeitraum } from "../utils/smart-filters.js";
 import { fetchFilteredList, FETCH_ALL_SAFETY_CAP } from "../utils/field-filter.js";
 import { fetchPurchaseOrdersWithMeta, PURCHASE_ORDER_SCAN_CAP } from "../utils/purchase-order-fetch.js";
-import { localDateString } from "../utils/local-date.js";
+import { localDateString, parseLocalDate } from "../utils/local-date.js";
 
 /**
  * Append a visible warning if any source query hit the safety cap. Keeps the
@@ -54,6 +54,12 @@ function todayStr(): string {
 }
 
 function daysBetween(dateStr1: string, dateStr2: string): number {
+  // daysBetween parses both inputs as UTC midnight (via `new Date(str)`) and
+  // subtracts the ms-deltas. The UTC offset cancels (same sign on both sides),
+  // so the calendar-day difference is correct regardless of host TZ. Do NOT
+  // migrate this to parseLocalDate — that would introduce a DST landmine for
+  // cross-DST date pairs, where local-midnight differs by 23h or 25h and the
+  // floor-division would be off by one.
   const d1 = new Date(dateStr1);
   const d2 = new Date(dateStr2);
   return Math.floor((d2.getTime() - d1.getTime()) / 86400000);
@@ -120,9 +126,12 @@ function buildTable(columns: string[], rows: Record<string, string | number>[]):
 
 /**
  * Determine the quarter string (e.g. "Q1 2026") from a date string.
+ *
+ * @internal Exported solely so unit tests can call it directly. Not part of
+ * the tool's public API — call sites should be inside this module only.
  */
-function dateToQuarter(dateStr: string): string {
-  const d = new Date(dateStr);
+export function dateToQuarter(dateStr: string): string {
+  const d = parseLocalDate(dateStr);
   const q = Math.floor(d.getMonth() / 3) + 1;
   return `Q${q} ${d.getFullYear()}`;
 }
@@ -428,7 +437,7 @@ async function handleOpenItemsReport(
       const ist = parseFloat(r.ist) || 0;
       const offen = round2(soll - ist);
       const zahlungszieltage = parseInt(r.zahlungszieltage) || 30;
-      const datumDate = new Date(r.datum);
+      const datumDate = parseLocalDate(r.datum);
       datumDate.setDate(datumDate.getDate() + zahlungszieltage);
       const faelligAm = localDateString(datumDate);
       const ueberfaelligTage = Math.max(0, daysBetween(faelligAm, todayDate));
@@ -489,7 +498,7 @@ async function handleOpenItemsReport(
       const ist = parseFloat(r.ist) || 0;
       const offen = soll - ist;
       const zahlungszieltage = parseInt(r.zahlungszieltage) || 30;
-      const datumDate = new Date(r.datum);
+      const datumDate = parseLocalDate(r.datum);
       datumDate.setDate(datumDate.getDate() + zahlungszieltage);
       const faelligAm = localDateString(datumDate);
       const ueberfaelligTage = Math.max(0, daysBetween(faelligAm, todayDate));
