@@ -309,12 +309,19 @@ describe("Dashboard Tools", () => {
   // --- KPI: ueberfaellige-rechnungen ---
 
   describe("ueberfaellige-rechnungen", () => {
-    it("filters invoices older than 30 days with open balance", async () => {
+    // Semantics updated: overdue = today > (datum + zahlungszieltage), not
+    // a hardcoded 30-day window from the invoice date. NOW = 2026-04-01.
+    it("filters by real due date (datum + zahlungszieltage)", async () => {
       mockClient.get.mockResolvedValue({
         data: [
-          { id: 1, soll: "1000.00", ist: "0.00", datum: "2026-02-01", belegnr: "RE-U01" },
-          { id: 2, soll: "500.00", ist: "0.00", datum: "2026-03-25", belegnr: "RE-U02" },
-          { id: 3, soll: "800.00", ist: "200.00", datum: "2026-01-15", belegnr: "RE-U03" },
+          // due 2026-03-03 -> overdue (29 days past)
+          { id: 1, soll: "1000.00", ist: "0.00", datum: "2026-02-01", zahlungszieltage: "30", belegnr: "RE-U01" },
+          // due 2026-04-24 -> NOT yet due
+          { id: 2, soll: "500.00", ist: "0.00", datum: "2026-03-25", zahlungszieltage: "30", belegnr: "RE-U02" },
+          // partial payment; due 2026-02-14 -> overdue but only remainder counts
+          { id: 3, soll: "800.00", ist: "200.00", datum: "2026-01-15", zahlungszieltage: "30", belegnr: "RE-U03" },
+          // missing zahlungszieltage -> defaults to 30 -> due 2026-03-03 -> overdue
+          { id: 4, soll: "400.00", ist: "0.00", datum: "2026-02-01", belegnr: "RE-U04" },
         ],
       });
 
@@ -327,9 +334,33 @@ describe("Dashboard Tools", () => {
 
       const data = JSON.parse(result.content[0].text);
       expect(data.kpi).toBe("ueberfaellige-rechnungen");
-      expect(data.anzahl).toBe(2);
-      expect(data.offener_betrag).toBe(1600);
-      expect(data.schwelle).toBe(">30 Tage");
+      // Overdue: id 1, 3, 4 (id 2 due date still in the future)
+      expect(data.anzahl).toBe(3);
+      // open amounts: 1000 + (800-200) + 400 = 2000
+      expect(data.offener_betrag).toBe(2000);
+      expect(data.basis).toBe("datum + zahlungszieltage");
+    });
+
+    it("Regression: long payment terms (60d) are NOT overdue after 35 days", async () => {
+      // Old hardcoded-30-days logic would have flagged this as overdue.
+      // With true due-date logic, an invoice from 2026-02-25 with
+      // zahlungszieltage=60 is due 2026-04-26 — on NOW=2026-04-01 it is NOT overdue.
+      mockClient.get.mockResolvedValue({
+        data: [
+          { id: 99, soll: "9999.00", ist: "0.00", datum: "2026-02-25", zahlungszieltage: "60", belegnr: "RE-U99" },
+        ],
+      });
+
+      const result = await handleDashboardTool(
+        "openxe-dashboard",
+        { kpi: "ueberfaellige-rechnungen" },
+        mockClient as unknown as OpenXEClient,
+        NOW
+      );
+
+      const data = JSON.parse(result.content[0].text);
+      expect(data.anzahl).toBe(0);
+      expect(data.offener_betrag).toBe(0);
     });
   });
 

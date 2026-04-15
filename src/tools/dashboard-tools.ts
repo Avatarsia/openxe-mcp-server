@@ -4,6 +4,7 @@ import { OpenXEClient } from "../client/openxe-client.js";
 import { fetchFilteredList, FETCH_ALL_SAFETY_CAP } from "../utils/field-filter.js";
 import { fetchPurchaseOrdersWithMeta, PURCHASE_ORDER_SCAN_CAP } from "../utils/purchase-order-fetch.js";
 import { localDateString } from "../utils/local-date.js";
+import { isInvoiceOverdue } from "../utils/invoice-aging.js";
 
 /**
  * KPIs must never under-report silently. If fetchFilteredList had to stop
@@ -214,14 +215,12 @@ async function kpiUeberfaelligeRechnungen(client: OpenXEClient, now: Date): Prom
     { status: "freigegeben" },
     { fetchAll: true, skipSlim: true }
   );
-  const cutoff = new Date(now);
-  cutoff.setDate(cutoff.getDate() - 30);
-  const cutoffStr = localDateString(cutoff);
-
+  const todayStr = localDateString(now);
   const ueberfaellig = result.data.filter((r: any) => {
     const soll = parseFloat(r.soll) || 0;
     const ist = parseFloat(r.ist) || 0;
-    return soll > ist && r.datum && r.datum <= cutoffStr;
+    if (soll <= ist) return false;
+    return isInvoiceOverdue(r, todayStr);
   });
   const summe = round2(sumField(ueberfaellig, "soll") - sumField(ueberfaellig, "ist"));
   return withTruncationWarning({
@@ -229,7 +228,7 @@ async function kpiUeberfaelligeRechnungen(client: OpenXEClient, now: Date): Prom
     anzahl: ueberfaellig.length,
     offener_betrag: summe,
     waehrung: "EUR",
-    schwelle: ">30 Tage",
+    basis: "datum + zahlungszieltage",
   }, result.meta);
 }
 

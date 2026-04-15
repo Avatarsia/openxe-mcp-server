@@ -1,3 +1,6 @@
+import { localDateString } from "./local-date.js";
+import { isInvoiceOverdue } from "./invoice-aging.js";
+
 export interface WhereClause {
   [field: string]: {
     equals?: string | number;
@@ -361,13 +364,15 @@ export const BUSINESS_PRESETS: Record<string, {
   },
   "ueberfaellige-rechnungen": {
     entity: "invoices",
-    filter: records => records.filter(r => {
-      if (r.zahlungsstatus === "bezahlt" || !r.belegnr) return false;
-      const diff = (Date.now() - new Date(r.datum).getTime()) / 86400000;
-      return diff > 30;
-    }),
-    defaultFields: ["id", "belegnr", "name", "datum", "soll", "ist", "zahlungsstatus"],
-    description: "Rechnungen ueber 30 Tage unbezahlt"
+    filter: records => {
+      const today = localDateString(new Date());
+      return records.filter(r => {
+        if (r.zahlungsstatus === "bezahlt" || !r.belegnr) return false;
+        return isInvoiceOverdue(r, today);
+      });
+    },
+    defaultFields: ["id", "belegnr", "name", "datum", "zahlungszieltage", "soll", "ist", "zahlungsstatus"],
+    description: "Rechnungen mit ueberschrittenem Faelligkeitsdatum (datum + zahlungszieltage)"
   },
   "entwuerfe": {
     entity: "invoices",
@@ -383,11 +388,16 @@ export const BUSINESS_PRESETS: Record<string, {
   },
   "ueberfaellige-lieferungen": {
     entity: "purchaseOrders",
-    filter: records => records.filter(r => {
-      if (r.status !== "bestellt") return false;
-      if (!r.lieferdatum) return false;
-      return new Date(r.lieferdatum) < new Date();
-    }),
+    filter: records => {
+      const today = localDateString(new Date());
+      return records.filter(r => {
+        if (r.status !== "bestellt") return false;
+        if (!r.lieferdatum) return false;
+        // Calendar-day comparison via YYYY-MM-DD string compare:
+        // avoids the intra-day flip that `new Date(...) < new Date()` had.
+        return String(r.lieferdatum).slice(0, 10) < today;
+      });
+    },
     defaultFields: ["id", "belegnr", "name", "lieferantennummer", "datum", "lieferdatum", "gesamtsumme", "status"],
     description: "Bestellungen mit ueberschrittenem Lieferdatum"
   },
@@ -565,15 +575,20 @@ export const STATUS_PRESETS: Record<string, Record<string, (record: any) => bool
     bezahlt: (r) => r.zahlungsstatus === "bezahlt",
     ueberfaellig: (r) => {
       if (r.zahlungsstatus === "bezahlt") return false;
-      const diff = (Date.now() - new Date(r.datum).getTime()) / 86400000;
-      return diff > 30;
+      const today = localDateString(new Date());
+      return isInvoiceOverdue(r, today);
     },
     entwurf: (r) => !r.belegnr || r.belegnr === "" || r.belegnr === null || r.status === "angelegt",
     mahnkandidaten: (r) => {
+      // Semantics: a dunning candidate is an invoice that SHOULD be dunned:
+      // unpaid AND not mahnwesen-locked AND past its real due date
+      // (datum + zahlungszieltage). The previous "14 days after invoice date"
+      // magic ignored zahlungszieltage and fired too early for customers with
+      // longer payment terms.
       if (r.zahlungsstatus === "bezahlt") return false;
       if (String(r.mahnwesen_gesperrt || "0") === "1") return false;
-      const diff = (Date.now() - new Date(r.datum).getTime()) / 86400000;
-      return diff > 14;
+      const today = localDateString(new Date());
+      return isInvoiceOverdue(r, today);
     },
   },
   quotes: {

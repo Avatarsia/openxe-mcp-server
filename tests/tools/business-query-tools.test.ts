@@ -182,9 +182,14 @@ describe("Business Query Tools", () => {
   // --- ueberfaellige-rechnungen ---
 
   describe("preset: ueberfaellige-rechnungen", () => {
-    it("filters to invoices older than 30 days and unpaid", async () => {
-      const oldDate = localDateString(new Date(Date.now() - 60 * 86400000)); // 60 days ago
-      const recentDate = localDateString(new Date(Date.now() - 10 * 86400000)); // 10 days ago
+    // Semantics: "ueberfaellig" now means today > (datum + zahlungszieltage),
+    // with a 30-day default when zahlungszieltage is missing. Old logic was
+    // a fixed 30-day cutoff from the invoice date and ignored zahlungszieltage.
+    it("filters by real due date (datum + zahlungszieltage, default 30)", async () => {
+      // 60 days ago, default 30d -> due 30d ago -> overdue
+      const oldDate = localDateString(new Date(Date.now() - 60 * 86400000));
+      // 10 days ago, default 30d -> due in 20d -> NOT overdue
+      const recentDate = localDateString(new Date(Date.now() - 10 * 86400000));
 
       mockPaginatedGet([
         { id: 30, belegnr: "RE-010", name: "Old Unpaid", datum: oldDate, soll: "500.00", ist: "0.00", zahlungsstatus: "offen" },
@@ -201,6 +206,22 @@ describe("Business Query Tools", () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.data).toHaveLength(1);
       expect(parsed.data[0].belegnr).toBe("RE-010");
+    });
+
+    it("Regression: respects zahlungszieltage=60 (not overdue at 35 days)", async () => {
+      // Old bug: invoice 35 days old flagged overdue even with 60-day terms.
+      const date35d = localDateString(new Date(Date.now() - 35 * 86400000));
+      mockPaginatedGet([
+        { id: 90, belegnr: "RE-060", name: "Long Terms", datum: date35d, zahlungszieltage: "60", soll: "1000.00", ist: "0.00", zahlungsstatus: "offen" },
+      ]);
+
+      const result = await handleBusinessQueryTool(
+        { preset: "ueberfaellige-rechnungen" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data).toHaveLength(0);
     });
   });
 

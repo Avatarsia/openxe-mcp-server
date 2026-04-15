@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { applyWhere, applySort, applyLimit, pickFields, applyFields, parseZeitraum, applyAggregate, applyStatusPreset, STATUS_PRESETS, WhereClause, AggregateOp } from "../../src/utils/smart-filters.js";
+import { applyWhere, applySort, applyLimit, pickFields, applyFields, parseZeitraum, applyAggregate, applyStatusPreset, STATUS_PRESETS, BUSINESS_PRESETS, WhereClause, AggregateOp } from "../../src/utils/smart-filters.js";
 import { localDateString } from "../../src/utils/local-date.js";
 
 const sampleRecords = [
@@ -879,18 +879,26 @@ describe("STATUS_PRESETS", () => {
     expect(fn({ zahlungsstatus: "bezahlt", datum: "2020-01-01" })).toBe(false);
   });
 
-  it("invoices.ueberfaellig: unpaid older than 30 days is overdue", () => {
+  it("invoices.ueberfaellig: unpaid past due date is overdue (default 30d)", () => {
     const fn = STATUS_PRESETS.invoices["ueberfaellig"];
     const old = new Date();
-    old.setDate(old.getDate() - 45);
+    old.setDate(old.getDate() - 45); // due 15d ago
     expect(fn({ zahlungsstatus: "offen", datum: localDateString(old) })).toBe(true);
   });
 
-  it("invoices.ueberfaellig: unpaid within 30 days is not overdue", () => {
+  it("invoices.ueberfaellig: unpaid before due date is not overdue", () => {
     const fn = STATUS_PRESETS.invoices["ueberfaellig"];
     const recent = new Date();
-    recent.setDate(recent.getDate() - 10);
+    recent.setDate(recent.getDate() - 10); // due in 20d
     expect(fn({ zahlungsstatus: "offen", datum: localDateString(recent) })).toBe(false);
+  });
+
+  it("invoices.ueberfaellig: respects zahlungszieltage (60d term, 35d old => not overdue)", () => {
+    // Regression: old logic ignored zahlungszieltage and flagged this as overdue.
+    const fn = STATUS_PRESETS.invoices["ueberfaellig"];
+    const d = new Date();
+    d.setDate(d.getDate() - 35);
+    expect(fn({ zahlungsstatus: "offen", datum: localDateString(d), zahlungszieltage: "60" })).toBe(false);
   });
 
   it("invoices.entwurf matches records without belegnr or status angelegt", () => {
@@ -909,15 +917,26 @@ describe("STATUS_PRESETS", () => {
   it("invoices.mahnkandidaten: gesperrt invoices excluded", () => {
     const fn = STATUS_PRESETS.invoices["mahnkandidaten"];
     const old = new Date();
-    old.setDate(old.getDate() - 30);
+    old.setDate(old.getDate() - 60); // past default due date
     expect(fn({ zahlungsstatus: "offen", mahnwesen_gesperrt: "1", datum: localDateString(old) })).toBe(false);
   });
 
-  it("invoices.mahnkandidaten: unpaid, not locked, older than 14 days", () => {
+  it("invoices.mahnkandidaten: unpaid, not locked, past due date", () => {
+    // Semantics updated: mahnkandidat = unpaid AND not locked AND overdue
+    // (today > datum + zahlungszieltage). Old hard 14-day-after-datum rule
+    // ignored zahlungszieltage and fired too early.
     const fn = STATUS_PRESETS.invoices["mahnkandidaten"];
     const old = new Date();
-    old.setDate(old.getDate() - 20);
+    old.setDate(old.getDate() - 45); // default 30d => due 15d ago
     expect(fn({ zahlungsstatus: "offen", mahnwesen_gesperrt: "0", datum: localDateString(old) })).toBe(true);
+  });
+
+  it("invoices.mahnkandidaten: Regression - 20 days old with default 30d term is NOT yet a candidate", () => {
+    // Old 14-day-magic flagged this as mahnkandidat; new logic does not.
+    const fn = STATUS_PRESETS.invoices["mahnkandidaten"];
+    const d = new Date();
+    d.setDate(d.getDate() - 20);
+    expect(fn({ zahlungsstatus: "offen", mahnwesen_gesperrt: "0", datum: localDateString(d) })).toBe(false);
   });
 
   it("quotes.offen matches freigegeben and angelegt", () => {
@@ -989,5 +1008,31 @@ describe("applyStatusPreset", () => {
     const result = applyStatusPreset(quotes, "quotes", "angenommen");
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe(2);
+  });
+});
+
+describe("BUSINESS_PRESETS.ueberfaellige-lieferungen", () => {
+  it("filters purchase orders by calendar-day string comparison of lieferdatum", () => {
+    // Calendar-day comparison (YYYY-MM-DD string) avoids the timestamp-flip
+    // bug the old `new Date(r.lieferdatum) < new Date()` logic had.
+    const preset = BUSINESS_PRESETS["ueberfaellige-lieferungen"];
+    const todayStr = localDateString(new Date());
+    const past = new Date();
+    past.setDate(past.getDate() - 5);
+    const pastStr = localDateString(past);
+    const future = new Date();
+    future.setDate(future.getDate() + 5);
+    const futureStr = localDateString(future);
+
+    const records = [
+      { id: 1, status: "bestellt", lieferdatum: pastStr },      // overdue
+      { id: 2, status: "bestellt", lieferdatum: todayStr },     // today -> NOT overdue (same calendar day)
+      { id: 3, status: "bestellt", lieferdatum: futureStr },    // future -> NOT overdue
+      { id: 4, status: "offen",    lieferdatum: pastStr },      // wrong status -> excluded
+      { id: 5, status: "bestellt", lieferdatum: "" },           // no lieferdatum -> excluded
+    ];
+    const result = preset.filter(records);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(1);
   });
 });
