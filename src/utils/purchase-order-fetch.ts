@@ -45,22 +45,27 @@ export async function fetchPurchaseOrdersWithMeta(
   // Strategy 1: BelegeList (fast path when available)
   try {
     const bl = await client.legacyPost("BelegeList", { typ: "bestellung" });
-    if (bl.success && bl.data) {
+    if (bl.success) {
+      // BelegeList answered authoritatively — even [] means "no purchase orders".
+      // Fall through to the scan only when the call itself failed.
       const data = bl.data;
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         return { orders: data, truncated: false, strategy: "belegelist" };
       }
-      if (typeof data === "object") {
+      if (data && typeof data === "object") {
         const obj = data as Record<string, unknown>;
         for (const val of Object.values(obj)) {
-          if (Array.isArray(val) && val.length > 0) {
+          if (Array.isArray(val)) {
             return { orders: val, truncated: false, strategy: "belegelist" };
           }
         }
+        // success:true but no array payload — unexpected shape, fall through
       }
+      // success:true with no recognisable payload → fall through
     }
   } catch {
-    // BelegeList not available on this instance — fall through to scan
+    // BelegeList not available on this instance (e.g. on v1.12 this reliably
+    // fails with 7499) — fall through to scan
   }
 
   // Strategy 2: Scan BestellungGet upward

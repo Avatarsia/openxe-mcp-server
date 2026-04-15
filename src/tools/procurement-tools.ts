@@ -28,6 +28,10 @@ import {
   formatAsCsv,
   formatAsIds,
 } from "../utils/smart-filters.js";
+import {
+  fetchPurchaseOrdersWithMeta,
+  PURCHASE_ORDER_SCAN_CAP,
+} from "../utils/purchase-order-fetch.js";
 
 // --- Types ---
 
@@ -106,56 +110,6 @@ export const PROCUREMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
 
 const PURCHASE_ORDER_SLIM_FIELDS = [...SLIM_FIELDS.purchaseOrder];
 
-// --- Helper: unwrap legacy response data into an array ---
-
-function unwrapLegacyList(data: unknown): any[] {
-  if (Array.isArray(data)) return data;
-  if (data && typeof data === "object") {
-    const obj = data as Record<string, unknown>;
-    // Some Legacy endpoints nest the list under a key
-    if (Array.isArray(obj.data)) return obj.data;
-    if (Array.isArray(obj.bestellung)) return obj.bestellung;
-    // Single record — wrap in array
-    if (obj.id || obj.belegnr) return [data];
-    // Check for any array value inside
-    for (const val of Object.values(obj)) {
-      if (Array.isArray(val)) return val;
-    }
-    // Non-empty object might be a single record
-    if (Object.keys(obj).length > 0) return [data];
-  }
-  return [];
-}
-
-// --- Helper: fetch purchase orders via iterative BestellungGet ---
-
-async function fetchPurchaseOrdersByIteration(
-  client: OpenXEClient,
-  maxId: number = 200
-): Promise<any[]> {
-  const orders: any[] = [];
-  let consecutiveFailures = 0;
-
-  for (let id = 1; id <= maxId; id++) {
-    try {
-      const result = await client.legacyPost("BestellungGet", { id: String(id) });
-      if (result.success && result.data) {
-        orders.push(result.data);
-        consecutiveFailures = 0;
-      } else {
-        consecutiveFailures++;
-      }
-    } catch {
-      consecutiveFailures++;
-    }
-
-    // Stop after 3 consecutive failures — likely past last ID
-    if (consecutiveFailures >= 3) break;
-  }
-
-  return orders;
-}
-
 // --- List Purchase Orders ---
 
 async function handleListPurchaseOrders(
@@ -171,24 +125,11 @@ async function handleListPurchaseOrders(
     if (!filters.datum_lte) filters.datum_lte = bis;
   }
 
-  // Strategy 1: Try BelegeList with typ=bestellung
-  let rawData: any[] = [];
-  let strategy = "BelegeList";
-
-  try {
-    const result = await client.legacyPost("BelegeList", { typ: "bestellung" });
-    if (result.success && result.data) {
-      rawData = unwrapLegacyList(result.data);
-    }
-  } catch {
-    // BelegeList not available — fall through
-  }
-
-  // Strategy 2: Fall back to iterative BestellungGet
-  if (rawData.length === 0) {
-    strategy = "BestellungGet (iterativ)";
-    rawData = await fetchPurchaseOrdersByIteration(client);
-  }
+  // Use the shared robust fetcher (BelegeList -> BestellungGet scan with 5000 cap / 50 misses)
+  const fetched = await fetchPurchaseOrdersWithMeta(client);
+  const rawData: any[] = fetched.orders;
+  const strategy = fetched.strategy === "belegelist" ? "BelegeList" : "BestellungGet (Scan)";
+  const fetchTruncated = fetched.truncated;
 
   // Apply basic server-side-like filters client-side (since Legacy API doesn't support query params)
   let data = rawData;
@@ -300,10 +241,28 @@ async function handleListPurchaseOrders(
     data = applySlimMode(data, PURCHASE_ORDER_SLIM_FIELDS) as any[];
   }
 
+  // Build a fetch-truncation warning text once — appended as a second TextContent
+  // for plain-text formats (table/csv/ids), and as `_warning` field on the JSON response.
+  const truncationWarning = fetchTruncated
+    ? `WARNUNG: Bestellungs-Scan hat den Cap von ${PURCHASE_ORDER_SCAN_CAP} IDs erreicht — Ergebnis ist eine Untergrenze. Grenze die Abfrage ein (z.B. lieferantennummer, datum_gte).`
+    : null;
+
   // Output format
-  if (filters.format === "table") return { content: [{ type: "text", text: formatAsTable(data) }] };
-  if (filters.format === "csv") return { content: [{ type: "text", text: formatAsCsv(data) }] };
-  if (filters.format === "ids") return { content: [{ type: "text", text: formatAsIds(data) }] };
+  if (filters.format === "table") {
+    const content: Array<{ type: "text"; text: string }> = [{ type: "text", text: formatAsTable(data) }];
+    if (truncationWarning) content.push({ type: "text", text: truncationWarning });
+    return { content };
+  }
+  if (filters.format === "csv") {
+    const content: Array<{ type: "text"; text: string }> = [{ type: "text", text: formatAsCsv(data) }];
+    if (truncationWarning) content.push({ type: "text", text: truncationWarning });
+    return { content };
+  }
+  if (filters.format === "ids") {
+    const content: Array<{ type: "text"; text: string }> = [{ type: "text", text: formatAsIds(data) }];
+    if (truncationWarning) content.push({ type: "text", text: truncationWarning });
+    return { content };
+  }
 
   // Truncate (only if no explicit limit was set)
   let truncated = false;
@@ -327,6 +286,9 @@ async function handleListPurchaseOrders(
     _hint: "Fuer Details nutze openxe-get-purchase-order mit der ID.",
     data,
   };
+  if (truncationWarning) {
+    response._warning = truncationWarning;
+  }
 
   return {
     content: [{ type: "text", text: JSON.stringify(response, null, 2) }],

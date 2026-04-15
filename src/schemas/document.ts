@@ -193,7 +193,10 @@ export const ListPurchaseOrdersInput = z.object({
   limit: z.number().optional().describe("Max results"),
   fields: z.string().optional().describe("Comma-separated fields to return"),
   zeitraum: z.string().optional().describe("Time period: heute, diese-woche, dieser-monat, letzter-monat, letzte-N-tage"),
-  status_preset: z.string().optional().describe("Business preset: offene-bestellungen, ueberfaellige-lieferungen"),
+  status_preset: z.string().optional().describe(
+    "Status preset (Wert muss exakt einer dieser sein): offen | freigegeben | bestellt | angemahnt | empfangen | aktiv. " +
+    "Fuer Business-Presets (offene-bestellungen, ueberfaellige-lieferungen) stattdessen openxe-business-query nutzen."
+  ),
   format: z.string().optional().describe("Output format: table, csv, ids"),
   aggregate: z.string().optional().describe("Aggregate: count, sum_field, avg_field, min_field, max_field, groupBy_field"),
   includePositionen: z.boolean().optional().describe("Include line items"),
