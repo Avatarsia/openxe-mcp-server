@@ -62,15 +62,15 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "list-files", label: "Dateien/Anhaenge auflisten [+Smart Filter]", category: "stammdaten", handler: "read", toolName: "openxe-list-files" },
 
   // === Belege ===
-  { action: "list-orders", label: "Auftraege auflisten [+Smart Filter] (belegnr, kundennummer, status_preset, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-orders" },
+  { action: "list-orders", label: "Auftraege auflisten [+Smart Filter] (belegnr, kundennummer, status_preset: offen|entwurf, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-orders" },
   { action: "get-order", label: "Auftrag nach ID (include=positionen fuer Details)", category: "belege", handler: "document-read", toolName: "openxe-get-order" },
-  { action: "list-invoices", label: "Rechnungen auflisten [+Smart Filter] (belegnr, kundennummer, status_preset, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-invoices" },
+  { action: "list-invoices", label: "Rechnungen auflisten [+Smart Filter] (belegnr, kundennummer, status_preset: offen|unbezahlt|bezahlt|ueberfaellig|entwurf|mahnkandidaten, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-invoices" },
   { action: "get-invoice", label: "Rechnung nach ID (include=positionen fuer Details)", category: "belege", handler: "document-read", toolName: "openxe-get-invoice" },
-  { action: "list-quotes", label: "Angebote auflisten [+Smart Filter] (belegnr, kundennummer, status_preset, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-quotes" },
+  { action: "list-quotes", label: "Angebote auflisten [+Smart Filter] (belegnr, kundennummer, status_preset: offen|angenommen|abgelehnt, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-quotes" },
   { action: "get-quote", label: "Angebot nach ID (include=positionen fuer Details)", category: "belege", handler: "document-read", toolName: "openxe-get-quote" },
-  { action: "list-delivery-notes", label: "Lieferscheine auflisten [+Smart Filter] (belegnr, kundennummer, status_preset, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-delivery-notes" },
+  { action: "list-delivery-notes", label: "Lieferscheine auflisten [+Smart Filter] (belegnr, kundennummer, zeitraum, where inkl. positionen.nummer, format: csv-positions). status_preset wird fuer dieses Tool nicht unterstuetzt.", category: "belege", handler: "document-read", toolName: "openxe-list-delivery-notes" },
   { action: "get-delivery-note", label: "Lieferschein nach ID (include=positionen fuer Details)", category: "belege", handler: "document-read", toolName: "openxe-get-delivery-note" },
-  { action: "list-credit-memos", label: "Gutschriften auflisten [+Smart Filter] (belegnr, kundennummer, status_preset, zeitraum, where inkl. positionen.nummer, format: csv-positions)", category: "belege", handler: "document-read", toolName: "openxe-list-credit-memos" },
+  { action: "list-credit-memos", label: "Gutschriften auflisten [+Smart Filter] (belegnr, kundennummer, zeitraum, where inkl. positionen.nummer, format: csv-positions). status_preset wird fuer dieses Tool nicht unterstuetzt.", category: "belege", handler: "document-read", toolName: "openxe-list-credit-memos" },
   { action: "get-credit-memo", label: "Gutschrift nach ID (include=positionen fuer Details)", category: "belege", handler: "document-read", toolName: "openxe-get-credit-memo" },
   { action: "create-order", label: "Neuen Auftrag erstellen (adresse=Kunden-ID, positionen: [{nummer, menge, preis}], keine bezeichnung in Positionen). kundennummer wird automatisch aus der Adresse gezogen — NICHT selbst angeben. Adresse muss eine Kundennummer haben, sonst Fehler.", category: "belege", handler: "document", toolName: "openxe-create-order" },
   { action: "create-quote", label: "Neues Angebot erstellen (adresse=Kunden-ID, positionen: [{nummer, menge, preis}], optional gueltigbis). kundennummer wird automatisch aus der Adresse gezogen.", category: "belege", handler: "document", toolName: "openxe-create-quote" },
@@ -280,7 +280,13 @@ export function handleDiscover(
     lines.push("format        Ausgabeformat: json, table, csv, csv-positions, ids");
     lines.push("              csv-positions: eine CSV-Zeile pro Belegposition (erfordert Belege mit positionen-Array)");
     lines.push('zeitraum      Datum-Shortcut: "heute", "diese-woche", "letzter-monat", "oktober-2025", "Q3-2025", "2025"');
-    lines.push('status_preset Status-Filter: "offen", "unbezahlt", "ueberfaellig", "bezahlt", "entwurf", "mahnkandidaten"');
+    lines.push("status_preset Status-Filter, entity-spezifisch:");
+    lines.push("              list-quotes: offen | angenommen | abgelehnt");
+    lines.push("              list-orders: offen | entwurf");
+    lines.push("              list-invoices: offen | unbezahlt | bezahlt | ueberfaellig | entwurf | mahnkandidaten");
+    lines.push("              list-delivery-notes / list-credit-memos: nicht unterstuetzt");
+    lines.push("              list-purchase-orders: offen | freigegeben | bestellt | angemahnt | empfangen | aktiv");
+    lines.push("              (fuer business-query-Presets openxe-business-query nutzen)");
     lines.push('aggregate     Aggregation: "count", {sum: "gesamtsumme"}, {groupBy: "land", count: true}');
     lines.push("");
   }
@@ -331,7 +337,7 @@ export const ROUTER_TOOL_DEFINITION: ToolDefinition = {
   name: "openxe",
   description:
     "Fuehrt eine OpenXE-Aktion aus (Warenwirtschaft / ERP). Rufe openxe-discover EINMAL pro Session fuer die vollstaendige Aktionsliste auf.\n\n" +
-    "Beleg-Aktionen (Filter: belegnr, kundennummer, status_preset, zeitraum, where):\n" +
+    "Beleg-Aktionen (Filter: belegnr, kundennummer, zeitraum, where; status_preset entity-spezifisch — siehe list-*-Label):\n" +
     "  list-invoices       Rechnungen\n" +
     "  list-orders         Auftraege\n" +
     "  list-quotes         Angebote\n" +

@@ -178,7 +178,13 @@ Alle Listen-Abfragen unterstuetzen clientseitige Filter:
 - **Dot-Notation:** Feldnamen wie `positionen.nummer` iterieren ueber verschachtelte Array-Felder eines Belegs. Eine einzelne Bedingung matcht "mindestens ein Element". Mehrere Bedingungen mit gleichem Array-Prefix (z.B. `positionen.nummer` + `positionen.menge`) werden automatisch elementweise gepaart — der Beleg matcht nur, wenn dasselbe Array-Element alle Bedingungen erfuellt.
 - **sort/limit:** Ergebnisse sortieren und begrenzen
 - **zeitraum:** `dieser-monat`, `letzter-monat`, `letzte-30-tage`, `Q1-2026`, `2025`
-- **status_preset** (auf Beleg-List-Tools): `offen`, `unbezahlt`, `ueberfaellig`, `bezahlt`, `entwurf`, `mahnkandidaten`. (Die Werte `offene-rechnungen`, `nicht-versendet`, `ueberfaellige-rechnungen` etc. sind separate **business-query**-Presets — siehe `openxe-business-query` bzw. action `business-query`.)
+- **status_preset** — entity-spezifisch, unbekannte/nicht unterstützte Werte werden vom Handler als Fehler abgewiesen:
+  - `list-quotes`: `offen` | `angenommen` | `abgelehnt`
+  - `list-orders`: `offen` | `entwurf`
+  - `list-invoices`: `offen` | `unbezahlt` | `bezahlt` | `ueberfaellig` | `entwurf` | `mahnkandidaten`
+  - `list-delivery-notes`, `list-credit-memos`: wird nicht unterstützt
+  - `list-purchase-orders`: `offen` | `freigegeben` | `bestellt` | `angemahnt` | `empfangen` | `aktiv`
+  - Für business-query-Presets (`offene-rechnungen`, `nicht-versendet`, `ueberfaellige-rechnungen`, `ueberfaellige-lieferungen` usw.) das separate Tool `openxe-business-query` bzw. die action `business-query` nutzen.
 - **aggregate:** `count`, `sum_feld`, `avg_feld`, `groupBy_feld`
 - **format:** `table`, `csv`, `ids`, `csv-positions` (bei Belegen: eine CSV-Zeile pro Belegposition statt pro Beleg, mit Beleg-Header-Feldern als Prefix und Positions-Feldern dahinter; bei Filter auf `positionen.*` werden nur die passenden Positionen exportiert).
 
