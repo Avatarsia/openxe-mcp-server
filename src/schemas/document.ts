@@ -188,10 +188,25 @@ export const ListPurchaseOrdersInput = z.object({
   datum_lte: z.string().optional().describe("Orders until date (YYYY-MM-DD)"),
   projekt: z.string().optional().describe("Filter by project"),
   // Smart filters
-  where: z.string().optional().describe("Client-side filter: field_operator_value (e.g. gesamtsumme_gte_100)"),
+  // NOTE: where/fields/aggregate akzeptieren bewusst BEIDE Formen — Object (analog
+  // document-read-tools.ts) UND legacy String — damit Router-Aufrufe mit Objekt-
+  // Smart-Filtern (z.B. where:{gesamtsumme:{gt:100}}) nicht am Zod-Parse scheitern.
+  // Der Handler hat bereits typeof-string-Weichen fuer die Legacy-Form.
+  where: z.union([
+    z.string(),
+    z.record(z.string(), z.record(z.string(), z.any())),
+  ]).optional().describe(
+    "Client-seitiger Filter. Object-Form: {field: {operator: value}}, z.B. {gesamtsumme:{gt:100}}. " +
+    "Legacy String-Form: field_operator_value (z.B. gesamtsumme_gte_100)."
+  ),
   sort: z.string().optional().describe("Sort: field_asc or field_desc"),
   limit: z.number().optional().describe("Max results"),
-  fields: z.string().optional().describe("Comma-separated fields to return"),
+  fields: z.union([
+    z.string(),
+    z.array(z.string()),
+  ]).optional().describe(
+    "Felder die zurueckgegeben werden sollen — als Array ['belegnr','gesamtsumme'] oder komma-getrennter String."
+  ),
   zeitraum: z.string().optional().describe("Time period: heute, diese-woche, dieser-monat, letzter-monat, letzte-N-tage"),
   status_preset: z.string().optional().describe(
     "Status preset. Erlaubte Werte (exakt): offen | freigegeben | bestellt | angemahnt | empfangen | aktiv. " +
@@ -199,9 +214,18 @@ export const ListPurchaseOrdersInput = z.object({
     "nutze das separate Tool openxe-business-query — diese Namen gehoeren NICHT in dieses Feld."
   ),
   format: z.string().optional().describe("Output format: table, csv, ids"),
-  aggregate: z.string().optional().describe("Aggregate: count, sum_field, avg_field, min_field, max_field, groupBy_field"),
-  includePositionen: z.boolean().optional().describe("Include line items"),
-  includeProtokoll: z.boolean().optional().describe("Include protocol/audit log"),
+  aggregate: z.union([
+    z.literal("count"),
+    z.string(),
+    z.object({ sum: z.string() }),
+    z.object({ avg: z.string() }),
+    z.object({ min: z.string() }),
+    z.object({ max: z.string() }),
+    z.object({ groupBy: z.string(), count: z.boolean().optional(), sum: z.string().optional() }),
+  ]).optional().describe(
+    "Aggregation. Object-Form: 'count', {sum:'feld'}, {avg:'feld'}, {min:'feld'}, {max:'feld'}, " +
+    "{groupBy:'feld', sum?:'feld'}. Legacy String-Form: count, sum_feld, avg_feld, min_feld, max_feld, groupBy_feld."
+  ),
   includeDeleted: z.boolean().optional().describe("Include deleted records"),
 });
 

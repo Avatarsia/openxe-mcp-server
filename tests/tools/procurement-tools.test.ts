@@ -232,6 +232,118 @@ describe("Procurement Tools — list-purchase-orders", () => {
     });
   });
 
+  describe("smart filters (object + string form)", () => {
+    const ordersFixture = [
+      { id: "1", belegnr: "BS-001", status: "offen",    name: "A", lieferantennummer: "L1", datum: "2026-01-01", gesamtsumme: "50.00"  },
+      { id: "2", belegnr: "BS-002", status: "bestellt", name: "B", lieferantennummer: "L2", datum: "2026-01-02", gesamtsumme: "150.00" },
+      { id: "3", belegnr: "BS-003", status: "offen",    name: "C", lieferantennummer: "L3", datum: "2026-01-03", gesamtsumme: "250.00" },
+    ];
+
+    function mockBelegeListReturns(orders: any[]) {
+      mockClient.legacyPost.mockImplementation((endpoint: string) => {
+        if (endpoint === "BelegeList") {
+          return Promise.resolve({ success: true, data: orders });
+        }
+        return Promise.resolve({ success: false, data: null });
+      });
+    }
+
+    it("accepts object-form where {gesamtsumme:{gt:100}} (Zod parse passes, filter applies)", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { where: { gesamtsumme: { gt: 100 } } },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data.map((d: any) => d.id).sort()).toEqual(["2", "3"]);
+    });
+
+    it("accepts string-form where (JSON) for backward-compat", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { where: JSON.stringify({ gesamtsumme: { gt: 100 } }) },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data.map((d: any) => d.id).sort()).toEqual(["2", "3"]);
+    });
+
+    it("accepts array-form fields ['belegnr','gesamtsumme']", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { fields: ["belegnr", "gesamtsumme"] },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      for (const row of parsed.data) {
+        expect(Object.keys(row).sort()).toEqual(["belegnr", "gesamtsumme"]);
+      }
+    });
+
+    it("accepts comma-string fields 'belegnr,gesamtsumme' (backward-compat)", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { fields: "belegnr,gesamtsumme" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      for (const row of parsed.data) {
+        expect(Object.keys(row).sort()).toEqual(["belegnr", "gesamtsumme"]);
+      }
+    });
+
+    it("accepts object-form aggregate {sum:'gesamtsumme'}", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { aggregate: { sum: "gesamtsumme" } },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      // Aggregate path returns raw aggregation result (no _info/_hint wrapper).
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed).not.toHaveProperty("data");
+      expect(parsed).not.toHaveProperty("_info");
+      // sum of 50 + 150 + 250 = 450
+      const numeric = typeof parsed === "number" ? parsed : parsed.sum ?? parsed.value ?? parsed.result;
+      expect(Number(numeric)).toBe(450);
+    });
+
+    it("accepts string-form aggregate 'sum_gesamtsumme' (backward-compat)", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { aggregate: "sum_gesamtsumme" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed).not.toHaveProperty("data");
+      const numeric = typeof parsed === "number" ? parsed : parsed.sum ?? parsed.value ?? parsed.result;
+      expect(Number(numeric)).toBe(450);
+    });
+  });
+
   describe("BelegeList authoritative empty", () => {
     it("treats BelegeList success+empty as authoritative zero orders (no scan)", async () => {
       // When BelegeList answers successfully with an empty list, the helper
