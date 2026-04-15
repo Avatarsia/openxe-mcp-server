@@ -393,9 +393,14 @@ export const BUSINESS_PRESETS: Record<string, {
       return records.filter(r => {
         if (r.status !== "bestellt") return false;
         if (!r.lieferdatum) return false;
+        const lieferdatum = String(r.lieferdatum).slice(0, 10);
+        // OpenXE emits "0000-00-00" as a placeholder for "no real delivery
+        // date set". Same guard as in handleProcurementReport: treat only
+        // lexically positive calendar days as real.
+        if (lieferdatum <= "0000-00-00") return false;
         // Calendar-day comparison via YYYY-MM-DD string compare:
         // avoids the intra-day flip that `new Date(...) < new Date()` had.
-        return String(r.lieferdatum).slice(0, 10) < today;
+        return lieferdatum < today;
       });
     },
     defaultFields: ["id", "belegnr", "name", "lieferantennummer", "datum", "lieferdatum", "gesamtsumme", "status"],

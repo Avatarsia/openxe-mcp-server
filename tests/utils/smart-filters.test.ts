@@ -1035,4 +1035,19 @@ describe("BUSINESS_PRESETS.ueberfaellige-lieferungen", () => {
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe(1);
   });
+
+  it("treats OpenXE's 0000-00-00 placeholder as 'no date set', not overdue", () => {
+    // Regression: "0000-00-00" is a non-empty string, so the old guard
+    // `if (!r.lieferdatum) return false` let it through and the lex compare
+    // `"0000-00-00" < today` was always true — every placeholder order
+    // silently flagged as overdue. handleProcurementReport already guarded
+    // with `> "0000-00-00"`; this preset now matches.
+    const preset = BUSINESS_PRESETS["ueberfaellige-lieferungen"];
+    const records = [
+      { id: 1, status: "bestellt", lieferdatum: "0000-00-00" },
+      { id: 2, status: "bestellt", lieferdatum: "0000-00-00T00:00:00" },
+    ];
+    const result = preset.filter(records);
+    expect(result).toHaveLength(0);
+  });
 });
