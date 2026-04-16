@@ -1,6 +1,7 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OpenXEClient } from "../client/openxe-client.js";
 import { BatchPDFInput } from "../schemas/document.js";
+import { fetchFilteredList } from "../utils/field-filter.js";
 
 // --- Types ---
 
@@ -78,30 +79,17 @@ async function resolveIds(
     params.datum_gte = zeitraum;
   }
 
-  // Fetch up to MAX_BATCH_SIZE + 1 to detect overflow
-  params.items = String(MAX_BATCH_SIZE + 1);
-  params.page = "1";
-
-  const result = await client.get<any[]>(`/v1/belege/${path}`, params);
-  const rawData = result.data;
-
-  let list: any[];
-  if (Array.isArray(rawData)) {
-    list = rawData;
-  } else if (rawData && typeof rawData === "object" && (rawData as any).data && Array.isArray((rawData as any).data)) {
-    list = (rawData as any).data;
-  } else {
-    list = [];
-  }
-
-  // Filter out deleted records
-  list = list.filter((r) => {
-    if (String(r.geloescht || "0") === "1") return false;
-    if (String(r.belegnr || "").startsWith("DEL")) return false;
-    return true;
+  // Fetch up to MAX_BATCH_SIZE + 1 *non-deleted* records. fetchFilteredList
+  // paginates server-side until that many survive the DEL filter, so a batch
+  // that happens to contain deleted rows on the first page still hits the
+  // overflow branch correctly instead of quietly undershooting.
+  const result = await fetchFilteredList(client, `/v1/belege/${path}`, params, {
+    maxResults: MAX_BATCH_SIZE + 1,
+    includeDeleted: false,
+    skipSlim: true,
   });
 
-  return list.map((r) => ({
+  return (result.data as any[]).map((r) => ({
     id: Number(r.id),
     belegnr: String(r.belegnr || ""),
   }));

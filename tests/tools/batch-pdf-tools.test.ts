@@ -231,6 +231,44 @@ describe("Batch PDF Tools", () => {
     expect(parsed._info).toContain("1 Fehler");
   });
 
+  it("overflow detection survives deleted records on the first page", async () => {
+    // Regression: before the fetchFilteredList switch, resolveIds pulled a
+    // single page of MAX_BATCH_SIZE+1 rows (21) and then applied the DEL
+    // filter. Deleted rows on page 1 silently thinned the candidate list
+    // below 21, so a call with e.g. 23 real matches (2 DEL on page 1, 21
+    // valid ones across pages) downloaded 19 PDFs instead of aborting with
+    // "zu viele Belege".
+    //
+    // Construct exactly that shape: page 1 has 2 DEL + 98 valid rows,
+    // page 2 has another 10 valid rows. After DEL filter, 108 valid rows
+    // exist — well above the 21 cap — so the handler MUST return the
+    // overflow error without kicking off any PDF download.
+    const page1: any[] = [];
+    page1.push({ id: 1, belegnr: "DEL-RE-001", geloescht: "1" });
+    page1.push({ id: 2, belegnr: "DEL-RE-002", geloescht: "1" });
+    for (let i = 3; i <= 100; i++) page1.push({ id: i, belegnr: `RE-${String(i).padStart(3, "0")}` });
+    const page2: any[] = [];
+    for (let i = 101; i <= 110; i++) page2.push({ id: i, belegnr: `RE-${String(i).padStart(3, "0")}` });
+
+    mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
+      const page = parseInt(params?.page ?? "1", 10);
+      if (page === 1) return Promise.resolve({ data: page1 });
+      if (page === 2) return Promise.resolve({ data: page2 });
+      return Promise.resolve({ data: [] });
+    });
+
+    const result = await handleBatchPDFTool(
+      "openxe-batch-pdf",
+      { typ: "rechnung", status_preset: "freigegeben" },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Zu viele Belege");
+    // No PDF should have been generated — the cap check fires first.
+    expect(mockClient.getRaw).not.toHaveBeenCalled();
+  });
+
   it("filters out deleted records from list results", async () => {
     mockClient.get.mockResolvedValue({
       data: [
