@@ -231,6 +231,43 @@ describe("Batch PDF Tools", () => {
     expect(parsed._info).toContain("1 Fehler");
   });
 
+  it("overflow detection fires when fetchFilteredList hits its page cap (truncated result)", async () => {
+    // Regression: fetchFilteredList stops after 10 pages × 100 rows in
+    // non-fetchAll mode. If every one of those rows happens to be deleted,
+    // resolveIds used to return an empty .data array — and the handler
+    // passed the overflow check (0 <= 20) even though the API clearly had
+    // more matches. The fix propagates meta.truncated from the helper and
+    // the handler refuses when truncated is true, independent of how many
+    // non-deleted rows survived. Mock serves 10 full pages of 100 rows
+    // (all valid for simplicity — the truncation comes from the page cap
+    // itself, not from the DEL filter).
+    mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
+      const page = parseInt(params?.page ?? "1", 10);
+      if (page >= 1 && page <= 10) {
+        const rows = Array.from({ length: 100 }, (_, i) => ({
+          id: (page - 1) * 100 + i + 1,
+          belegnr: `RE-${String((page - 1) * 100 + i + 1).padStart(4, "0")}`,
+        }));
+        return Promise.resolve({ data: rows });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    const result = await handleBatchPDFTool(
+      "openxe-batch-pdf",
+      { typ: "rechnung", status_preset: "freigegeben" },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Zu viele Belege");
+    // Whether the message uses the "mehr als 20"-branch or the regular
+    // count-branch depends on how many rows land in resolved.documents
+    // before fetchFilteredList hits maxResults=21. Either way we must
+    // have aborted without generating any PDFs.
+    expect(mockClient.getRaw).not.toHaveBeenCalled();
+  });
+
   it("overflow detection survives deleted records on the first page", async () => {
     // Regression: before the fetchFilteredList switch, resolveIds pulled a
     // single page of MAX_BATCH_SIZE+1 rows (21) and then applied the DEL
