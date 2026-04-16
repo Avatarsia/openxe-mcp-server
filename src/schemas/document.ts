@@ -199,7 +199,11 @@ export const ListPurchaseOrdersInput = z.object({
     "Client-seitiger Filter. Object-Form: {field: {operator: value}}, z.B. {gesamtsumme:{gt:100}}. " +
     "Legacy String-Form: field_operator_value (z.B. gesamtsumme_gte_100)."
   ),
-  sort: z.string().optional().describe("Sort: field_asc or field_desc"),
+  sort_field: z.string().optional().describe(
+    "Sortierfeld (z.B. 'gesamtsumme', 'datum', 'belegnr'). Gemeinsame Smart-Filter-Form mit den anderen list-* Tools. Backward-compat: der alte Einzelstring 'sort' (z.B. 'gesamtsumme_desc') wird weiterhin akzeptiert."
+  ),
+  sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sortierreihenfolge (Standard: asc). Nur wirksam zusammen mit sort_field."),
+  sort: z.string().optional().describe("Legacy: Sort als Einzelstring 'field_asc' oder 'field_desc'. Bevorzugte Form ist sort_field + sort_order."),
   limit: z.number().optional().describe("Max results"),
   fields: z.union([
     z.string(),

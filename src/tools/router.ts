@@ -274,11 +274,11 @@ export function handleDiscover(
     lines.push("              Operatoren: equals, contains, startsWith, endsWith, gt, lt, gte, lte, range, empty, notEmpty, in, containsAny, containsAll");
     lines.push('              Dot-Notation fuer verschachtelte Array-Felder: {"positionen.nummer": {containsAll: ["ART-001", "ART-002"]}}');
     lines.push('fields        Nur bestimmte Felder: ["kundennummer", "name", "plz"]');
-    lines.push('sort_field    Sortieren nach Feld (z.B. "gesamtsumme", "datum", "name")');
-    lines.push('sort_order    "asc" oder "desc"');
+    lines.push('sort_field    Sortieren nach Feld (z.B. "gesamtsumme", "datum", "name"). list-purchase-orders akzeptiert zusaetzlich die legacy-Form sort="field_asc".');
+    lines.push('sort_order    "asc" oder "desc" (Paar mit sort_field)');
     lines.push("limit         Max. Ergebnisse (z.B. 10 fuer Top-10)");
     lines.push("format        Ausgabeformat: json, table, csv, csv-positions, ids");
-    lines.push("              csv-positions: eine CSV-Zeile pro Belegposition (erfordert Belege mit positionen-Array)");
+    lines.push("              csv-positions: eine CSV-Zeile pro Belegposition (nur fuer Beleg-List-Tools wie list-invoices, list-orders; nicht fuer list-purchase-orders)");
     lines.push('zeitraum      Datum-Shortcut: "heute", "diese-woche", "letzter-monat", "oktober-2025", "Q3-2025", "2025"');
     lines.push("status_preset Status-Filter, entity-spezifisch:");
     lines.push("              list-quotes: offen | angenommen | abgelehnt");

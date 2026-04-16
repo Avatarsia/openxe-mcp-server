@@ -63,7 +63,7 @@ export const PROCUREMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       "Bestellungen (Purchase Orders) auflisten via Legacy API. Gibt kompakte Liste zurueck (Schluesselfelder: id, belegnr, status, name, lieferantennummer, datum, lieferdatum, gesamtsumme). " +
       "Optionale Filter: status (offen/freigegeben/bestellt/angemahnt/empfangen), belegnr, lieferantennummer, name, datum_gte, datum_lte, projekt, zeitraum. " +
       "Status-Presets: offen, freigegeben, bestellt, angemahnt, empfangen, aktiv. " +
-      "Smart Filter: where, sort, limit, fields, format (json/table/csv/ids), aggregate. " +
+      "Smart Filter: where, sort_field + sort_order (oder legacy sort: 'field_asc'), limit, fields, format (json/table/csv/ids — kein csv-positions), aggregate. " +
       "Fuer Details nutze openxe-get-purchase-order mit der ID.",
     inputSchema: zodToJsonSchema(ListPurchaseOrdersInput) as Record<string, unknown>,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -228,8 +228,12 @@ async function handleListPurchaseOrders(
     return { content: [{ type: "text", text: JSON.stringify(aggResult, null, 2) }] };
   }
 
-  // Sort
-  if (filters.sort) {
+  // Sort — neue Smart-Filter-Form (sort_field + sort_order) hat Vorrang,
+  // legacy Einzelstring 'sort' (field_asc | field_desc) bleibt als Fallback
+  // fuer Backward-Compat erhalten.
+  if (filters.sort_field) {
+    data = applySort(data, { field: filters.sort_field, order: filters.sort_order ?? "asc" });
+  } else if (filters.sort) {
     let sortField: string;
     let sortOrder: "asc" | "desc" = "asc";
     if (typeof filters.sort === "string") {

@@ -373,6 +373,75 @@ describe("Procurement Tools — list-purchase-orders", () => {
     });
   });
 
+  // Regression tests for Task R: Discover-/Schema-Drift bei list-purchase-orders.
+  // Der Router-Discover wirbt generisch fuer sort_field + sort_order sowie
+  // format=csv-positions. Das Schema hatte urspruenglich nur `sort` als Einzel-
+  // string und der Handler kannte sort_field nicht — diese Tests sichern den
+  // Fix ab (Backward-Compat + neue gemeinsame Form).
+  describe("sort drift fix (Task R)", () => {
+    const ordersFixture = [
+      { id: "1", belegnr: "BS-001", status: "offen",    name: "A", lieferantennummer: "L1", datum: "2026-01-01", gesamtsumme: "50.00"  },
+      { id: "2", belegnr: "BS-002", status: "bestellt", name: "B", lieferantennummer: "L2", datum: "2026-01-02", gesamtsumme: "250.00" },
+      { id: "3", belegnr: "BS-003", status: "offen",    name: "C", lieferantennummer: "L3", datum: "2026-01-03", gesamtsumme: "150.00" },
+    ];
+
+    function mockBelegeListReturns(orders: any[]) {
+      mockClient.legacyPost.mockImplementation((endpoint: string) => {
+        if (endpoint === "BelegeList") {
+          return Promise.resolve({ success: true, data: orders });
+        }
+        return Promise.resolve({ success: false, data: null });
+      });
+    }
+
+    it("sort_field + sort_order=desc sortiert nach gesamtsumme absteigend (gemeinsame Smart-Filter-Form)", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { sort_field: "gesamtsumme", sort_order: "desc" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      // 250 > 150 > 50 → IDs in Reihenfolge 2, 3, 1
+      expect(parsed.data.map((d: any) => d.id)).toEqual(["2", "3", "1"]);
+    });
+
+    it("legacy sort='gesamtsumme_desc' funktioniert weiterhin (Backward-Compat)", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { sort: "gesamtsumme_desc" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data.map((d: any) => d.id)).toEqual(["2", "3", "1"]);
+    });
+
+    it("format='csv-positions' faellt auf JSON-Default zurueck (purchase-orders unterstuetzt kein csv-positions)", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { format: "csv-positions" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      // Weder CSV-Header noch Positions-Struktur — es muss ein JSON-Objekt
+      // mit dem ueblichen _info/data-Wrapper sein.
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed).toHaveProperty("_info");
+      expect(parsed).toHaveProperty("data");
+      expect(parsed.data).toHaveLength(3);
+    });
+  });
+
   // Regression tests for Task Q (Finding 1): plain-text formats (table/csv/ids)
   // must honor MAX_LIST_RESULTS just like JSON does. Before the fix the format
   // branches returned raw text BEFORE truncateWithWarning ran, so format=csv
