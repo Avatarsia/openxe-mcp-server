@@ -460,4 +460,86 @@ describe("Subscription Tools", () => {
       expect(result.content[0].text).toContain("Unknown tool");
     });
   });
+
+  // Regression tests for Task P: aggregate and sort_field must operate on the
+  // full dataset, not just the first MAX_LIST_RESULTS (=50) records. Mirrors
+  // the read-tools / document-read-tools coverage so the subscription list
+  // path can't silently drift back to the windowed behaviour.
+  describe("aggregate/sort_field run on full dataset (subscriptions)", () => {
+    /** Mock /v1/aboartikel with multi-page pagination. */
+    function mockMultiPageAboartikel(all: any[]) {
+      mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
+        const page = parseInt(params?.page ?? "1", 10);
+        const items = parseInt(params?.items ?? "100", 10);
+        const start = (page - 1) * items;
+        const slice = all.slice(start, start + items);
+        return Promise.resolve({
+          data: slice,
+          pagination: { totalCount: all.length, page, itemsPerPage: items },
+        });
+      });
+    }
+
+    it("list-subscriptions aggregate:count on 150 records (2 pages) returns 150 not 50", async () => {
+      const all: any[] = [];
+      for (let i = 1; i <= 150; i++) {
+        all.push({ id: i, bezeichnung: `Abo ${i}`, adresse: 1000 + i, preis: 10 });
+      }
+      mockMultiPageAboartikel(all);
+
+      const result = await handleSubscriptionTool(
+        "openxe-list-subscriptions",
+        { aggregate: "count" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      // Without fetchAll on aggregate the handler would stop after the first
+      // page and report 50 — the Task-P fix forces the full scan.
+      expect(parsed.count).toBe(150);
+
+      const pages = mockClient.get.mock.calls
+        .map((c: any[]) => c[1]?.page)
+        .filter((p: string | undefined): p is string => p !== undefined);
+      expect(pages).toContain("1");
+      expect(pages).toContain("2");
+    });
+
+    it("list-subscriptions sort_field='bezeichnung' limit=3 picks the global top-3, not the top-3 of the first 50", async () => {
+      const all: any[] = [];
+      // IDs 1..100 with names that sort AFTER the page-2 entries, so the
+      // lexicographically smallest 3 are deliberately on page 2.
+      for (let i = 1; i <= 100; i++) {
+        all.push({ id: i, bezeichnung: `Zzz-${String(i).padStart(3, "0")}`, adresse: i, preis: 10 });
+      }
+      // IDs 101, 102, 103 on page 2 with names that will sort first.
+      for (let i = 101; i <= 103; i++) {
+        all.push({ id: i, bezeichnung: `Aaa-${String(i).padStart(3, "0")}`, adresse: i, preis: 10 });
+      }
+      // Pad page 2 to 150 total.
+      for (let i = 104; i <= 150; i++) {
+        all.push({ id: i, bezeichnung: `Mmm-${String(i).padStart(3, "0")}`, adresse: i, preis: 10 });
+      }
+      mockMultiPageAboartikel(all);
+
+      const result = await handleSubscriptionTool(
+        "openxe-list-subscriptions",
+        { sort_field: "bezeichnung", sort_order: "asc", limit: 3 },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      // The true global top-3 sits on page 2. Without the full-scan fix the
+      // handler would have returned Zzz-001..Zzz-003 from page 1.
+      expect(parsed.data.map((r: any) => r.id)).toEqual([101, 102, 103]);
+
+      const pages = mockClient.get.mock.calls
+        .map((c: any[]) => c[1]?.page)
+        .filter((p: string | undefined): p is string => p !== undefined);
+      expect(pages).toContain("1");
+      expect(pages).toContain("2");
+    });
+  });
 });
