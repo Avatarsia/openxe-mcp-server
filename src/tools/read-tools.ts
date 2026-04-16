@@ -235,7 +235,7 @@ function withTruncationWarning(rawText: string, truncated: boolean): ToolResult 
   if (truncated) {
     content.push({
       type: "text",
-      text: `WARNUNG: Ergebnis wurde nach ${MAX_LIST_RESULTS} Eintraegen abgeschnitten. Verwende Filter (where, limit, kundennummer, name, etc.) um genauer einzugrenzen.`,
+      text: `WARNUNG: Ergebnis wurde nach ${MAX_LIST_RESULTS} Eintraegen abgeschnitten. Verwende \`where\`, \`limit\` oder die tool-spezifischen Filter (siehe Tool-Beschreibung) um das Ergebnis einzugrenzen.`,
     });
   }
   return { content };
@@ -397,7 +397,7 @@ export async function handleReadTool(
       }
       if (fldsArt && fldsArt.length > 0) {
         dataArt = applyFields(dataArt, fldsArt);
-      } else if (whereArt || fldsArt) {
+      } else if (whereArt) {
         dataArt = applySlimMode(dataArt, [...SLIM_FIELDS.article]) as any[];
       }
       if (!limArt) {
@@ -474,7 +474,7 @@ export async function handleReadTool(
       }
       if (fldsCat && fldsCat.length > 0) {
         dataCat = applyFields(dataCat, fldsCat);
-      } else if (whereCat || fldsCat) {
+      } else if (whereCat) {
         dataCat = applySlimMode(dataCat, [...SLIM_FIELDS.category]) as any[];
       }
       if (!limCat) {
@@ -519,7 +519,7 @@ export async function handleReadTool(
       }
       if (fldsShip && fldsShip.length > 0) {
         dataShip = applyFields(dataShip, fldsShip);
-      } else if (whereShip || fldsShip) {
+      } else if (whereShip) {
         dataShip = applySlimMode(dataShip, [...SLIM_FIELDS.shippingMethod]) as any[];
       }
       if (!limShip) {
@@ -568,7 +568,7 @@ export async function handleReadTool(
       }
       if (fldsFile && fldsFile.length > 0) {
         dataFile = applyFields(dataFile, fldsFile);
-      } else if (whereFile || fldsFile) {
+      } else if (whereFile) {
         dataFile = applySlimMode(dataFile, [...SLIM_FIELDS.file]) as any[];
       }
       if (!limFile) {
