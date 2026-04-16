@@ -47,8 +47,6 @@ const ListAddressesInput = z.object({
     .boolean()
     .optional()
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
-  page: z.number().int().positive().optional().describe("Page number (default 1)"),
-  items: z.number().int().positive().optional().describe("Items per page (default 20)"),
   sort_field: z.string().optional().describe("Sortierfeld (z.B. 'name', 'datum', 'gesamtsumme')"),
   sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sortierreihenfolge"),
   limit: z.number().int().positive().max(200).optional().describe("Maximale Anzahl Ergebnisse"),
@@ -77,8 +75,6 @@ const ListArticlesInput = z.object({
     .boolean()
     .optional()
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
-  page: z.number().int().positive().optional().describe("Page number (default 1)"),
-  items: z.number().int().positive().optional().describe("Items per page (default 20)"),
   sort_field: z.string().optional().describe("Sortierfeld (z.B. 'name', 'datum', 'gesamtsumme')"),
   sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sortierreihenfolge"),
   limit: z.number().int().positive().max(200).optional().describe("Maximale Anzahl Ergebnisse"),
@@ -112,8 +108,6 @@ const ListCategoriesInput = z.object({
     .boolean()
     .optional()
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
-  page: z.number().int().positive().optional().describe("Page number (default 1)"),
-  items: z.number().int().positive().optional().describe("Items per page (default 20)"),
   sort_field: z.string().optional().describe("Sortierfeld (z.B. 'name', 'datum', 'gesamtsumme')"),
   sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sortierreihenfolge"),
   limit: z.number().int().positive().max(200).optional().describe("Maximale Anzahl Ergebnisse"),
@@ -128,8 +122,6 @@ const ListShippingMethodsInput = z.object({
     .boolean()
     .optional()
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
-  page: z.number().int().positive().optional().describe("Page number (default 1)"),
-  items: z.number().int().positive().optional().describe("Items per page (default 20)"),
   sort_field: z.string().optional().describe("Sortierfeld (z.B. 'name', 'datum', 'gesamtsumme')"),
   sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sortierreihenfolge"),
   limit: z.number().int().positive().max(200).optional().describe("Maximale Anzahl Ergebnisse"),
@@ -147,8 +139,6 @@ const ListFilesInput = z.object({
     .boolean()
     .optional()
     .describe("Mit include_deleted=true werden auch geloeschte Datensaetze angezeigt."),
-  page: z.number().int().positive().optional().describe("Page number (default 1)"),
-  items: z.number().int().positive().optional().describe("Items per page (default 20)"),
   sort_field: z.string().optional().describe("Sortierfeld (z.B. 'name', 'datum', 'gesamtsumme')"),
   sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sortierreihenfolge"),
   limit: z.number().int().positive().max(200).optional().describe("Maximale Anzahl Ergebnisse"),
@@ -234,13 +224,30 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
 
 // --- Helper: build list response with metadata wrapper ---
 
+/**
+ * Appends a truncation warning as a SECOND TextContent item when the underlying
+ * fetch was truncated. Keeps content[0] as clean raw text so downstream
+ * consumers (Excel, pandas, batch-id pipelines) can ingest it unchanged.
+ * Mirrors the csv-positions pattern in document-read-tools.ts.
+ */
+function withTruncationWarning(rawText: string, truncated: boolean): ToolResult {
+  const content: Array<{ type: "text"; text: string }> = [{ type: "text", text: rawText }];
+  if (truncated) {
+    content.push({
+      type: "text",
+      text: `WARNUNG: Ergebnis wurde nach ${MAX_LIST_RESULTS} Eintraegen abgeschnitten. Verwende Filter (where, limit, kundennummer, name, etc.) um genauer einzugrenzen.`,
+    });
+  }
+  return { content };
+}
+
 function buildListResponse(result: FilteredListResult, hint: string, format?: string, fields?: string[]): ToolResult {
   const data = result.data as any[];
 
   // Apply non-JSON formats BEFORE wrapping in metadata
-  if (format === "table") return { content: [{ type: "text", text: formatAsTable(data, fields) }] };
-  if (format === "csv") return { content: [{ type: "text", text: formatAsCsv(data, fields) }] };
-  if (format === "ids") return { content: [{ type: "text", text: formatAsIds(data) }] };
+  if (format === "table") return withTruncationWarning(formatAsTable(data, fields), result.meta.truncated);
+  if (format === "csv") return withTruncationWarning(formatAsCsv(data, fields), result.meta.truncated);
+  if (format === "ids") return withTruncationWarning(formatAsIds(data), result.meta.truncated);
 
   // Default: json with metadata wrapper
   const response: Record<string, unknown> = {};
@@ -356,7 +363,7 @@ export async function handleReadTool(
 
     case "openxe-list-articles": {
       const args = ListArticlesInput.parse(input);
-      const { include_deleted: includeDeletedArt, page: _p, items: _i, sort_field: sfArt, sort_order: soArt, limit: limArt, fields: fldsArt, aggregate: aggArt, format: fmtArt, where: whereArt, ...filterArgs } = args;
+      const { include_deleted: includeDeletedArt, sort_field: sfArt, sort_order: soArt, limit: limArt, fields: fldsArt, aggregate: aggArt, format: fmtArt, where: whereArt, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.name_de) apiParams.name_de = filterArgs.name_de;
       if (filterArgs.nummer) apiParams.nummer = filterArgs.nummer;
@@ -436,7 +443,7 @@ export async function handleReadTool(
 
     case "openxe-list-categories": {
       const args = ListCategoriesInput.parse(input);
-      const { include_deleted: includeDeletedCat, page: _p2, items: _i2, sort_field: sfCat, sort_order: soCat, limit: limCat, fields: fldsCat, aggregate: aggCat, format: fmtCat, where: whereCat, ...filterArgs } = args;
+      const { include_deleted: includeDeletedCat, sort_field: sfCat, sort_order: soCat, limit: limCat, fields: fldsCat, aggregate: aggCat, format: fmtCat, where: whereCat, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.bezeichnung) apiParams.bezeichnung = filterArgs.bezeichnung;
       if (filterArgs.parent !== undefined) apiParams.parent = filterArgs.parent;
@@ -485,7 +492,7 @@ export async function handleReadTool(
 
     case "openxe-list-shipping-methods": {
       const args = ListShippingMethodsInput.parse(input);
-      const { include_deleted: includeDeletedShip, page: _p3, items: _i3, sort_field: sfShip, sort_order: soShip, limit: limShip, fields: fldsShip, aggregate: aggShip, format: fmtShip, where: whereShip } = args;
+      const { include_deleted: includeDeletedShip, sort_field: sfShip, sort_order: soShip, limit: limShip, fields: fldsShip, aggregate: aggShip, format: fmtShip, where: whereShip } = args;
 
       const result = await fetchFilteredList(client, "/v1/versandarten", {}, {
         slimFields: SLIM_FIELDS.shippingMethod,
@@ -530,7 +537,7 @@ export async function handleReadTool(
 
     case "openxe-list-files": {
       const args = ListFilesInput.parse(input);
-      const { include_deleted: includeDeletedFile, page: _p4, items: _i4, sort_field: sfFile, sort_order: soFile, limit: limFile, fields: fldsFile, aggregate: aggFile, format: fmtFile, where: whereFile, ...filterArgs } = args;
+      const { include_deleted: includeDeletedFile, sort_field: sfFile, sort_order: soFile, limit: limFile, fields: fldsFile, aggregate: aggFile, format: fmtFile, where: whereFile, ...filterArgs } = args;
       const apiParams: Record<string, string | number | undefined> = {};
       if (filterArgs.objekt) apiParams.objekt = filterArgs.objekt;
       if (filterArgs.parameter) apiParams.parameter = filterArgs.parameter;

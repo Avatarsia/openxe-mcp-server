@@ -394,14 +394,12 @@ export async function handleDocumentReadTool(
       data = applySlimMode(data, [...slimFields]) as any[];
     }
 
-    // Apply non-JSON output formats (after field projection)
-    if (filters.format === "table") return { content: [{ type: "text", text: formatAsTable(data) }] };
-    if (filters.format === "csv") return { content: [{ type: "text", text: formatAsCsv(data) }] };
-    if (filters.format === "ids") return { content: [{ type: "text", text: formatAsIds(data) }] };
-
-    // Truncate (only if no explicit limit was set)
+    // Truncate (only if no explicit limit was set). Must happen BEFORE any
+    // non-JSON format branch so table/csv/ids also honor MAX_LIST_RESULTS
+    // and can emit a truncation warning consistently.
     if (!filters.limit) {
       const { data: truncDoc, truncated: truncDocFlag } = truncateWithWarning(data, MAX_LIST_RESULTS);
+      data = truncDoc as any[];
       result.data = truncDoc;
       result.meta.returned = truncDoc.length;
       result.meta.truncated = truncDocFlag || result.meta.truncated;
@@ -409,6 +407,24 @@ export async function handleDocumentReadTool(
       result.data = data;
       result.meta.returned = data.length;
     }
+
+    // Apply non-JSON output formats (after field projection + truncation).
+    // If the underlying fetch was truncated by MAX_LIST_RESULTS, emit a second
+    // TextContent item so downstream parsers still see a clean raw stream in
+    // content[0] while the LLM learns that the list is incomplete.
+    const appendTruncWarning = (text: string) => {
+      const content: Array<{ type: "text"; text: string }> = [{ type: "text", text }];
+      if (result.meta.truncated) {
+        content.push({
+          type: "text",
+          text: `WARNUNG: Ergebnis wurde nach ${MAX_LIST_RESULTS} Eintraegen abgeschnitten. Verwende Filter (where, status_preset, zeitraum) oder \`limit\` um genauer einzugrenzen.`,
+        });
+      }
+      return { content };
+    };
+    if (filters.format === "table") return appendTruncWarning(formatAsTable(data));
+    if (filters.format === "csv") return appendTruncWarning(formatAsCsv(data));
+    if (filters.format === "ids") return appendTruncWarning(formatAsIds(data));
 
     // Build info string
     let info = `${result.meta.returned} Ergebnisse`;

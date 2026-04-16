@@ -179,11 +179,11 @@ describe("Read Tools", () => {
 
     await handleReadTool(
       "openxe-list-articles",
-      { name_de: "Filament", typ: "produkt", page: 2, items: 10 },
+      { name_de: "Filament", typ: "produkt" },
       mockClient as unknown as OpenXEClient
     );
 
-    // fetchFilteredList overrides page/items with its own pagination
+    // fetchFilteredList manages pagination internally (page=1, items=100)
     expect(mockClient.get).toHaveBeenCalledWith("/v1/artikel", {
       name_de: "Filament",
       typ: "produkt",
@@ -315,6 +315,80 @@ describe("Read Tools", () => {
     expect(parsed.data.map((a: any) => a.id)).toEqual([1, 101, 102]);
     // Should report filtered-out DEL records in _info
     expect(parsed._info).toContain("geloeschte ausgeblendet");
+  });
+
+  describe("truncation warning for non-JSON formats", () => {
+    /** Build N fake address records (each passes the DEL filter). */
+    function makeAddresses(count: number) {
+      const records: any[] = [];
+      for (let i = 1; i <= count; i++) {
+        records.push({ id: i, name: `Kunde ${i}`, kundennummer: `K${1000 + i}` });
+      }
+      return records;
+    }
+
+    it("format=table: appends WARNUNG as content[1] when >MAX_LIST_RESULTS records", async () => {
+      // 60 records > MAX_LIST_RESULTS (50). Page 1 returns 60, page 2 is empty.
+      // fetchFilteredList trims to 50 and sets meta.truncated=true.
+      mockPaginatedGet(makeAddresses(60));
+
+      const result = await handleReadTool(
+        "openxe-list-addresses",
+        { format: "table" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content).toHaveLength(2);
+      // content[0] is the raw table (no WARNUNG prefix polluting it)
+      expect(result.content[0].text).not.toMatch(/WARNUNG/);
+      // content[1] carries the truncation warning
+      expect(result.content[1].text).toMatch(/WARNUNG.*50.*abgeschnitten/);
+    });
+
+    it("format=csv: appends WARNUNG as content[1] when >MAX_LIST_RESULTS records", async () => {
+      mockPaginatedGet(makeAddresses(60));
+
+      const result = await handleReadTool(
+        "openxe-list-addresses",
+        { format: "csv" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.content).toHaveLength(2);
+      // content[0] is a clean CSV stream, no warning mixed in
+      expect(result.content[0].text).not.toMatch(/WARNUNG/);
+      expect(result.content[0].text).toContain(";"); // semicolon-separated
+      expect(result.content[1].text).toMatch(/WARNUNG.*50.*abgeschnitten/);
+    });
+
+    it("format=ids: appends WARNUNG as content[1] when >MAX_LIST_RESULTS records", async () => {
+      mockPaginatedGet(makeAddresses(60));
+
+      const result = await handleReadTool(
+        "openxe-list-addresses",
+        { format: "ids" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.content).toHaveLength(2);
+      // content[0] is a bare ID list, consumable verbatim by batch scripts
+      expect(result.content[0].text).not.toMatch(/WARNUNG/);
+      expect(result.content[1].text).toMatch(/WARNUNG.*50.*abgeschnitten/);
+    });
+
+    it("format=table: no warning when result set is below MAX_LIST_RESULTS", async () => {
+      mockPaginatedGet(makeAddresses(5));
+
+      const result = await handleReadTool(
+        "openxe-list-addresses",
+        { format: "table", limit: 10 },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.content).toHaveLength(1);
+      expect(result.content[0].text).not.toMatch(/WARNUNG/);
+    });
   });
 
   it("returns error for unknown tool name", async () => {
