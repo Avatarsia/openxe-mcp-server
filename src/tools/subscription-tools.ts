@@ -112,8 +112,6 @@ const ListSubscriptionsInput = z.object({
   projekt: z.number().int().optional().describe("Filter by project ID"),
   bezeichnung: z.string().optional().describe("Filter by subscription name (client-side contains filter)"),
   include_deleted: z.boolean().optional().describe("Include deleted records (default: false)"),
-  page: z.number().int().positive().optional().describe("Page number (default 1)"),
-  items: z.number().int().positive().optional().describe("Items per page (default 20)"),
   sort_field: z.string().optional().describe("Sort field (e.g. 'bezeichnung', 'startdatum', 'preis')"),
   sort_order: z.enum(["asc", "desc"]).optional().default("asc").describe("Sort order"),
   limit: z.number().int().positive().max(200).optional().describe("Max results"),
