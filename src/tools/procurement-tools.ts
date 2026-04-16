@@ -19,7 +19,6 @@ import {
   applyAggregate,
   AggregateOp,
   applySort,
-  applyLimit,
   applyFields,
   applyWhere,
   applyStatusPreset,
@@ -248,11 +247,6 @@ async function handleListPurchaseOrders(
     data = applySort(data, { field: sortField, order: sortOrder });
   }
 
-  // Limit
-  if (filters.limit) {
-    data = applyLimit(data, filters.limit);
-  }
-
   // Fields or slim projection
   const needsSlim = !filters.fields;
   if (filters.fields) {
@@ -264,38 +258,52 @@ async function handleListPurchaseOrders(
     data = applySlimMode(data, PURCHASE_ORDER_SLIM_FIELDS) as any[];
   }
 
-  // Build a fetch-truncation warning text once — appended as a second TextContent
-  // for plain-text formats (table/csv/ids), and as `_warning` field on the JSON response.
-  const truncationWarning = fetchTruncated
+  // Scan-cap warning (source 1): the fetcher hit PURCHASE_ORDER_SCAN_CAP, so the
+  // result is an under-count. Surfaces as `_warning` on JSON and as a second
+  // TextContent on plain-text formats.
+  const scanCapWarning = fetchTruncated
     ? `WARNUNG: Bestellungs-Scan hat den Cap von ${PURCHASE_ORDER_SCAN_CAP} IDs erreicht — Ergebnis ist eine Untergrenze. Grenze die Abfrage ein (z.B. lieferantennummer, datum_gte).`
     : null;
 
-  // Output format
-  if (filters.format === "table") {
-    const content: Array<{ type: "text"; text: string }> = [{ type: "text", text: formatAsTable(data) }];
-    if (truncationWarning) content.push({ type: "text", text: truncationWarning });
-    return { content };
-  }
-  if (filters.format === "csv") {
-    const content: Array<{ type: "text"; text: string }> = [{ type: "text", text: formatAsCsv(data) }];
-    if (truncationWarning) content.push({ type: "text", text: truncationWarning });
-    return { content };
-  }
-  if (filters.format === "ids") {
-    const content: Array<{ type: "text"; text: string }> = [{ type: "text", text: formatAsIds(data) }];
-    if (truncationWarning) content.push({ type: "text", text: truncationWarning });
-    return { content };
-  }
-
-  // Truncate (only if no explicit limit was set)
+  // MAX_LIST_RESULTS truncation (source 2): same pattern as read-tools /
+  // document-read-tools / subscription-tools. Must run BEFORE the format
+  // branches so that plain-text formats (table/csv/ids) honor MAX_LIST_RESULTS
+  // just like JSON — otherwise format=csv without limit can dump the whole
+  // FETCH_ALL_SAFETY_CAP=10000 set into the context.
+  // User limit has precedence: if set we use it as effective cap, otherwise
+  // MAX_LIST_RESULTS. Limit is applied HERE (not earlier via applyLimit) so
+  // we can track whether the cap actually kicked in and emit a warning.
+  const effectiveMax = typeof filters.limit === "number" && filters.limit > MAX_LIST_RESULTS
+    ? filters.limit
+    : (filters.limit ?? MAX_LIST_RESULTS);
   let truncated = false;
-  if (!filters.limit) {
-    const result = truncateWithWarning(data, MAX_LIST_RESULTS);
+  {
+    const result = truncateWithWarning(data, effectiveMax);
     data = result.data as any[];
     truncated = result.truncated;
   }
 
-  // Build info string
+  // Max-list-results warning (source 2): emitted when MAX_LIST_RESULTS capped
+  // the result. Same wording as read-tools/document-read-tools/subscription.
+  const listCapWarning = truncated
+    ? `WARNUNG: Ergebnis wurde nach ${effectiveMax} Eintraegen abgeschnitten. Verwende \`where\`, \`limit\` oder die tool-spezifischen Filter (siehe Tool-Beschreibung) um das Ergebnis einzugrenzen.`
+    : null;
+
+  // Output format (plain-text branches): append BOTH warnings as separate
+  // TextContent items when applicable, so downstream parsers still see clean
+  // raw text in content[0] while the LLM learns the list is capped.
+  if (filters.format === "table" || filters.format === "csv" || filters.format === "ids") {
+    const rawText =
+      filters.format === "table" ? formatAsTable(data)
+      : filters.format === "csv" ? formatAsCsv(data)
+      : formatAsIds(data);
+    const content: Array<{ type: "text"; text: string }> = [{ type: "text", text: rawText }];
+    if (scanCapWarning) content.push({ type: "text", text: scanCapWarning });
+    if (listCapWarning) content.push({ type: "text", text: listCapWarning });
+    return { content };
+  }
+
+  // Build info string (JSON path)
   let info = `${data.length} Ergebnisse (via ${strategy})`;
   if (filteredOut > 0) {
     info += ` (${filteredOut} geloeschte ausgeblendet). Fuer alle: includeDeleted=true`;
@@ -309,8 +317,8 @@ async function handleListPurchaseOrders(
     _hint: "Fuer Details nutze openxe-get-purchase-order mit der ID.",
     data,
   };
-  if (truncationWarning) {
-    response._warning = truncationWarning;
+  if (scanCapWarning) {
+    response._warning = scanCapWarning;
   }
 
   return {

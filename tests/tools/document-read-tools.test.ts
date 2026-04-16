@@ -493,4 +493,70 @@ describe("Document Read Tools", () => {
       expect(pages).toContain("2");
     });
   });
+
+  // Regression test for Task Q Finding 2: sort_field triggers skipSlim upstream
+  // (Task P). The slim re-projection at the end of the handler previously only
+  // fired on `where || fields || needsPositions`, not on pure sort_field. That
+  // meant raw fetched invoice records (incl. non-slim fields) leaked into the
+  // response whenever only sort_field was set.
+  describe("sort_field triggers slim re-projection (Task Q Finding 2)", () => {
+    it("list-invoices {sort_field:'datum'} strips non-slim fields like positionen/freitext", async () => {
+      mockPaginatedGet([
+        {
+          id: 1,
+          belegnr: "RE-2026-0001",
+          status: "offen",
+          name: "Acme",
+          kundennummer: "K1001",
+          datum: "2026-01-02",
+          soll: "100.00",
+          ist: "0.00",
+          zahlungsstatus: "offen",
+          waehrung: "EUR",
+          // Extra non-slim fields that must be stripped by applySlimMode.
+          positionen: [{ nummer: "ART-1", bezeichnung: "X" }],
+          freitext: "some note",
+          internebezeichnung: "internal",
+        },
+        {
+          id: 2,
+          belegnr: "RE-2026-0002",
+          status: "bezahlt",
+          name: "Beta",
+          kundennummer: "K1002",
+          datum: "2026-01-01",
+          soll: "200.00",
+          ist: "200.00",
+          zahlungsstatus: "bezahlt",
+          waehrung: "EUR",
+          positionen: [{ nummer: "ART-2", bezeichnung: "Y" }],
+          freitext: "another note",
+          internebezeichnung: "ref",
+        },
+      ]);
+
+      const result = await handleDocumentReadTool(
+        "openxe-list-invoices",
+        { sort_field: "datum" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data).toHaveLength(2);
+      // Both records must still be there — we don't assert sort order here
+      // since the core of this regression is the slim re-projection, not the
+      // sort. Sort correctness is covered by the Task P regression tests.
+      // Slim re-projection must have stripped non-slim fields from every row.
+      for (const row of parsed.data) {
+        expect(row).not.toHaveProperty("positionen");
+        expect(row).not.toHaveProperty("freitext");
+        expect(row).not.toHaveProperty("internebezeichnung");
+        // Sanity: slim fields must still be present.
+        expect(row).toHaveProperty("id");
+        expect(row).toHaveProperty("belegnr");
+        expect(row).toHaveProperty("datum");
+      }
+    });
+  });
 });

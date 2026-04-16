@@ -338,7 +338,9 @@ export async function handleSubscriptionTool(
       // Fields or slim
       if (fields && fields.length > 0) {
         data = applyFields(data, fields);
-      } else if (where || bezeichnung) {
+      } else if (where || bezeichnung || sort_field) {
+        // sort_field triggers skipSlim upstream (Task P) so we must re-project
+        // the slim fields here; otherwise raw fetched records leak out.
         data = applySlimMode(data, [...SUBSCRIPTION_SLIM_FIELDS]) as any[];
       }
       // Truncate

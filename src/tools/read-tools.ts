@@ -341,7 +341,9 @@ export async function handleReadTool(
       // 6. applyFields OR applySlimMode (fields overrides slim)
       if (fields && fields.length > 0) {
         data = applyFields(data, fields);
-      } else if (where || nameFilter || email || land) {
+      } else if (where || nameFilter || email || land || sort_field) {
+        // sort_field triggers skipSlim upstream (Task P) so we must re-project
+        // the slim fields here; otherwise raw fetched records leak out.
         data = applySlimMode(data, [...SLIM_FIELDS.address]) as any[];
       }
       // 7. truncateWithWarning (only if no explicit limit was set)
@@ -408,7 +410,9 @@ export async function handleReadTool(
       }
       if (fldsArt && fldsArt.length > 0) {
         dataArt = applyFields(dataArt, fldsArt);
-      } else if (whereArt) {
+      } else if (whereArt || sfArt) {
+        // sort_field triggers skipSlim upstream (Task P) so we must re-project
+        // the slim fields here; otherwise raw fetched records leak out.
         dataArt = applySlimMode(dataArt, [...SLIM_FIELDS.article]) as any[];
       }
       if (!limArt) {
@@ -489,7 +493,9 @@ export async function handleReadTool(
       }
       if (fldsCat && fldsCat.length > 0) {
         dataCat = applyFields(dataCat, fldsCat);
-      } else if (whereCat) {
+      } else if (whereCat || sfCat) {
+        // sort_field triggers skipSlim upstream (Task P) so we must re-project
+        // the slim fields here; otherwise raw fetched records leak out.
         dataCat = applySlimMode(dataCat, [...SLIM_FIELDS.category]) as any[];
       }
       if (!limCat) {
@@ -538,7 +544,9 @@ export async function handleReadTool(
       }
       if (fldsShip && fldsShip.length > 0) {
         dataShip = applyFields(dataShip, fldsShip);
-      } else if (whereShip) {
+      } else if (whereShip || sfShip) {
+        // sort_field triggers skipSlim upstream (Task P) so we must re-project
+        // the slim fields here; otherwise raw fetched records leak out.
         dataShip = applySlimMode(dataShip, [...SLIM_FIELDS.shippingMethod]) as any[];
       }
       if (!limShip) {
@@ -591,7 +599,9 @@ export async function handleReadTool(
       }
       if (fldsFile && fldsFile.length > 0) {
         dataFile = applyFields(dataFile, fldsFile);
-      } else if (whereFile) {
+      } else if (whereFile || sfFile) {
+        // sort_field triggers skipSlim upstream (Task P) so we must re-project
+        // the slim fields here; otherwise raw fetched records leak out.
         dataFile = applySlimMode(dataFile, [...SLIM_FIELDS.file]) as any[];
       }
       if (!limFile) {

@@ -372,4 +372,99 @@ describe("Procurement Tools — list-purchase-orders", () => {
       expect(bestellungCalls).toHaveLength(0);
     });
   });
+
+  // Regression tests for Task Q (Finding 1): plain-text formats (table/csv/ids)
+  // must honor MAX_LIST_RESULTS just like JSON does. Before the fix the format
+  // branches returned raw text BEFORE truncateWithWarning ran, so format=csv
+  // without an explicit limit could dump up to FETCH_ALL_SAFETY_CAP=10000 rows.
+  describe("plain-text formats honor MAX_LIST_RESULTS (Task Q Finding 1)", () => {
+    /** Build N purchase-order records that all pass the DEL filter. */
+    function makeOrders(count: number) {
+      const rows: any[] = [];
+      for (let i = 1; i <= count; i++) {
+        rows.push({
+          id: String(i),
+          belegnr: `BS-${String(i).padStart(4, "0")}`,
+          status: "offen",
+          name: `Lieferant ${i}`,
+          lieferantennummer: `L${i}`,
+          datum: "2026-01-01",
+          lieferdatum: "2026-02-01",
+          gesamtsumme: "100.00",
+          waehrung: "EUR",
+          einkaeufer: "EK",
+        });
+      }
+      return rows;
+    }
+
+    function mockBelegeListReturns(orders: any[]) {
+      mockClient.legacyPost.mockImplementation((endpoint: string) => {
+        if (endpoint === "BelegeList") {
+          return Promise.resolve({ success: true, data: orders });
+        }
+        return Promise.resolve({ success: false, data: null });
+      });
+    }
+
+    it("format=csv without limit: content[0] has exactly 50 data rows + header, content[1] is WARNUNG", async () => {
+      // 60 purchase orders, no limit -> MAX_LIST_RESULTS (50) must cap the
+      // output. Previously the csv branch returned all 60 rows verbatim.
+      mockBelegeListReturns(makeOrders(60));
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { format: "csv" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      // Two TextContent items: the CSV body and the cap warning.
+      expect(result.content).toHaveLength(2);
+      const csv = result.content[0].text;
+      // Count lines: 1 header + 50 data rows = 51 lines total. formatAsCsv
+      // emits one line per record, semicolon-separated, joined by \n.
+      const lines = csv.split(/\r?\n/).filter((l: string) => l.length > 0);
+      expect(lines.length).toBe(51);
+      // content[0] must stay a clean CSV — no WARNUNG polluting the stream.
+      expect(csv).not.toMatch(/WARNUNG/);
+      // content[1] is the abbreviation warning.
+      expect(result.content[1].text).toMatch(/WARNUNG.*50.*abgeschnitten/);
+    });
+
+    it("format=table without limit: appends WARNUNG as content[1] when >MAX_LIST_RESULTS", async () => {
+      mockBelegeListReturns(makeOrders(60));
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { format: "table" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.content).toHaveLength(2);
+      expect(result.content[0].text).not.toMatch(/WARNUNG/);
+      expect(result.content[1].text).toMatch(/WARNUNG.*abgeschnitten/);
+    });
+
+    it("format=csv with limit=150 and 200 records: all 150 in output, warning says 150", async () => {
+      // User limit 150 > MAX_LIST_RESULTS (50), so effectiveMax = 150. Output
+      // must contain 150 data rows, and the warning must reflect the user cap,
+      // not the default 50.
+      mockBelegeListReturns(makeOrders(200));
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { format: "csv", limit: 150 },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.content).toHaveLength(2);
+      const csv = result.content[0].text;
+      const lines = csv.split(/\r?\n/).filter((l: string) => l.length > 0);
+      // 1 header + 150 data rows = 151 lines total.
+      expect(lines.length).toBe(151);
+      expect(result.content[1].text).toMatch(/WARNUNG.*150.*abgeschnitten/);
+      // The default 50 cap must NOT leak into the warning.
+      expect(result.content[1].text).not.toMatch(/nach 50/);
+    });
+  });
 });

@@ -548,6 +548,48 @@ describe("Read Tools", () => {
       expect(pages).toContain("2");
     });
 
+    it("sort_field only: slim re-projection strips non-slim fields like konto/blz (Task Q Finding 2)", async () => {
+      // Regression for Task Q Finding 2: when sort_field is set alone (without
+      // where), skipSlim=true upstream — the handler must re-apply slim at the
+      // end. Before the fix, raw fetched records (with konto/blz/etc.) leaked.
+      const all: any[] = [];
+      for (let i = 1; i <= 3; i++) {
+        all.push({
+          id: i,
+          name: `Kunde ${i}`,
+          kundennummer: `K${1000 + i}`,
+          // Extra non-slim fields that must be stripped out by applySlimMode.
+          konto: `DE${i}0000000000`,
+          blz: `1000${i}`,
+          // Another non-slim field to be extra defensive.
+          steuernummer: `ST-${i}`,
+        });
+      }
+      mockMultiPageCustom(all);
+
+      const result = await handleReadTool(
+        "openxe-list-addresses",
+        { sort_field: "name" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data).toHaveLength(3);
+      // Every record in the response must be slim-projected: konto/blz must
+      // not appear on any record.
+      for (const row of parsed.data) {
+        expect(row).not.toHaveProperty("konto");
+        expect(row).not.toHaveProperty("blz");
+        expect(row).not.toHaveProperty("steuernummer");
+        // Sanity: the slim fields that were present on the mock records
+        // must still be there.
+        expect(row).toHaveProperty("id");
+        expect(row).toHaveProperty("name");
+        expect(row).toHaveProperty("kundennummer");
+      }
+    });
+
     it("list-addresses sort_field=name limit=3 on 150 shuffled records picks global top 3", async () => {
       // Build 150 records where the globally alphabetically smallest names
       // ("Aaa001", "Aaa002", "Aaa003") sit on page 2 (indices 100, 101, 102).

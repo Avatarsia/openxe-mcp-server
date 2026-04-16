@@ -396,8 +396,10 @@ export async function handleDocumentReadTool(
     // Slim or fields projection
     if (filters.fields && filters.fields.length > 0) {
       data = applyFields(data, filters.fields);
-    } else if (filters.where || filters.fields || needsPositions) {
-      // slim was skipped in fetchFilteredList, apply it now
+    } else if (filters.where || filters.fields || needsPositions || filters.sort_field) {
+      // slim was skipped in fetchFilteredList, apply it now.
+      // sort_field triggers skipSlim upstream (Task P), so re-project here;
+      // otherwise raw fetched records (incl. non-slim fields) leak out.
       data = applySlimMode(data, [...slimFields]) as any[];
     }
 
