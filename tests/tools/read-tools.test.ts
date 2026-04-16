@@ -401,4 +401,88 @@ describe("Read Tools", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Unknown read tool");
   });
+
+  // Regression tests for Task N: limit > MAX_LIST_RESULTS (=50) must be
+  // honored by fetchFilteredList, not silently capped at 50. The previous
+  // behavior stopped pagination after 50 records because maxResults defaulted
+  // to MAX_LIST_RESULTS. Tests simulate a multi-page API (pageSize=100) so
+  // the caller has to actually paginate to reach >50 results.
+  describe("limit > MAX_LIST_RESULTS is honored (Task N regression)", () => {
+    /** Build N records that survive the DEL filter. */
+    function makeRecords(count: number, prefix: string) {
+      const records: any[] = [];
+      for (let i = 1; i <= count; i++) {
+        records.push({ id: i, name: `${prefix} ${i}`, kundennummer: `K${1000 + i}` });
+      }
+      return records;
+    }
+
+    /** Mock that returns `total` records split across pages of size 100. */
+    function mockMultiPage(total: number, prefix: string) {
+      const all = makeRecords(total, prefix);
+      mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
+        const page = parseInt(params?.page ?? "1", 10);
+        const items = parseInt(params?.items ?? "100", 10);
+        const start = (page - 1) * items;
+        const slice = all.slice(start, start + items);
+        return Promise.resolve({
+          data: slice,
+          pagination: { totalCount: total, page, itemsPerPage: items },
+        });
+      });
+    }
+
+    it("list-addresses with limit=150 returns all 150 across 2 pages (100+50)", async () => {
+      mockMultiPage(150, "Kunde");
+
+      const result = await handleReadTool(
+        "openxe-list-addresses",
+        { limit: 150 },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      // Without the fix, fetchFilteredList would stop at 50 records.
+      expect(parsed.data).toHaveLength(150);
+      // Verify the client actually fetched both pages.
+      const pagesRequested = mockClient.get.mock.calls
+        .map((call: any[]) => call[1]?.page)
+        .filter((p: string | undefined): p is string => p !== undefined);
+      expect(pagesRequested).toContain("1");
+      expect(pagesRequested).toContain("2");
+    });
+
+    it("list-articles with limit=120 returns all 120 across 2 pages", async () => {
+      // Articles use name_de/nummer as identifiers; reuse kundennummer-keyed
+      // records since the DEL filter accepts any of name/kundennummer.
+      mockMultiPage(120, "Artikel");
+
+      const result = await handleReadTool(
+        "openxe-list-articles",
+        { limit: 120 },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data).toHaveLength(120);
+    });
+
+    it("list-addresses without explicit limit still caps at MAX_LIST_RESULTS (50)", async () => {
+      // Baseline: default behavior unchanged when no limit is set.
+      mockMultiPage(150, "Kunde");
+
+      const result = await handleReadTool(
+        "openxe-list-addresses",
+        {},
+        mockClient as unknown as OpenXEClient
+      );
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data).toHaveLength(50);
+      // truncated flag must be set to signal more records available
+      expect(parsed._info).toMatch(/gekuerzt/);
+    });
+  });
 });

@@ -284,11 +284,13 @@ export async function handleReadTool(
       const apiParams: Record<string, string | number | undefined> = {};
       if (serverParams.kundennummer) apiParams.kundennummer = serverParams.kundennummer;
 
+      const effectiveMaxAddr = typeof limit === "number" && limit > MAX_LIST_RESULTS ? limit : MAX_LIST_RESULTS;
       const result = await fetchFilteredList(client, "/v1/adressen", apiParams, {
         slimFields: SLIM_FIELDS.address,
         includeDeleted: include_deleted,
         skipSlim: !!(where || fields || nameFilter || email || land),
         fetchAll: !!(where || nameFilter || email || land),
+        maxResults: effectiveMaxAddr,
       });
 
       // Client-side filters (name, email, land)
@@ -371,11 +373,13 @@ export async function handleReadTool(
       if (filterArgs.projekt) apiParams.projekt = filterArgs.projekt;
       if (filterArgs.include) apiParams.include = filterArgs.include;
 
+      const effectiveMaxArt = typeof limArt === "number" && limArt > MAX_LIST_RESULTS ? limArt : MAX_LIST_RESULTS;
       const result = await fetchFilteredList(client, "/v1/artikel", apiParams, {
         slimFields: SLIM_FIELDS.article,
         includeDeleted: includeDeletedArt,
         skipSlim: !!(whereArt || fldsArt),
         fetchAll: !!whereArt,
+        maxResults: effectiveMaxArt,
       });
 
       // applyWhere -- on full data (before slim)
@@ -449,11 +453,13 @@ export async function handleReadTool(
       if (filterArgs.parent !== undefined) apiParams.parent = filterArgs.parent;
       if (filterArgs.projekt) apiParams.projekt = filterArgs.projekt;
 
+      const effectiveMaxCat = typeof limCat === "number" && limCat > MAX_LIST_RESULTS ? limCat : MAX_LIST_RESULTS;
       const result = await fetchFilteredList(client, "/v1/artikelkategorien", apiParams, {
         slimFields: SLIM_FIELDS.category,
         includeDeleted: includeDeletedCat,
         skipSlim: !!(whereCat || fldsCat),
         fetchAll: !!whereCat,
+        maxResults: effectiveMaxCat,
       });
 
       let dataCat: any[] = result.data;
@@ -494,11 +500,13 @@ export async function handleReadTool(
       const args = ListShippingMethodsInput.parse(input);
       const { include_deleted: includeDeletedShip, sort_field: sfShip, sort_order: soShip, limit: limShip, fields: fldsShip, aggregate: aggShip, format: fmtShip, where: whereShip } = args;
 
+      const effectiveMaxShip = typeof limShip === "number" && limShip > MAX_LIST_RESULTS ? limShip : MAX_LIST_RESULTS;
       const result = await fetchFilteredList(client, "/v1/versandarten", {}, {
         slimFields: SLIM_FIELDS.shippingMethod,
         includeDeleted: includeDeletedShip,
         skipSlim: !!(whereShip || fldsShip),
         fetchAll: !!whereShip,
+        maxResults: effectiveMaxShip,
       });
 
       let dataShip: any[] = result.data;
@@ -543,11 +551,13 @@ export async function handleReadTool(
       if (filterArgs.parameter) apiParams.parameter = filterArgs.parameter;
       if (filterArgs.stichwort) apiParams.stichwort = filterArgs.stichwort;
 
+      const effectiveMaxFile = typeof limFile === "number" && limFile > MAX_LIST_RESULTS ? limFile : MAX_LIST_RESULTS;
       const result = await fetchFilteredList(client, "/v1/dateien", apiParams, {
         slimFields: SLIM_FIELDS.file,
         includeDeleted: includeDeletedFile,
         skipSlim: !!(whereFile || fldsFile),
         fetchAll: !!whereFile,
+        maxResults: effectiveMaxFile,
       });
 
       let dataFile: any[] = result.data;

@@ -280,11 +280,13 @@ export async function handleSubscriptionTool(
       if (serverParams.gruppe) apiParams.gruppe = serverParams.gruppe;
       if (serverParams.projekt) apiParams.projekt = serverParams.projekt;
 
+      const effectiveMaxSub = typeof limit === "number" && limit > MAX_LIST_RESULTS ? limit : MAX_LIST_RESULTS;
       const result = await fetchFilteredList(client, "/v1/aboartikel", apiParams, {
         slimFields: [...SUBSCRIPTION_SLIM_FIELDS],
         includeDeleted: include_deleted,
         skipSlim: !!(where || fields || bezeichnung),
         fetchAll: !!(where || bezeichnung),
+        maxResults: effectiveMaxSub,
       });
 
       let data: any[] = result.data;

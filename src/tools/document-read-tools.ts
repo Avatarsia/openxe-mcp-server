@@ -310,11 +310,13 @@ export async function handleDocumentReadTool(
     if (needsPositions) params.include = "positionen";
 
     const slimFields = LIST_TOOL_SLIM[toolName];
+    const effectiveMaxDoc = typeof filters.limit === "number" && filters.limit > MAX_LIST_RESULTS ? filters.limit : MAX_LIST_RESULTS;
     const result = await fetchFilteredList(client, `/v1/belege/${listPath}`, params, {
       slimFields: [...slimFields],
       includeDeleted: filters.include_deleted,
       skipSlim: !!(filters.where || filters.fields || needsPositions),
       fetchAll: !!(filters.where || needsPositions),
+      maxResults: effectiveMaxDoc,
     });
 
     // applyWhere -- on full data (before slim)
