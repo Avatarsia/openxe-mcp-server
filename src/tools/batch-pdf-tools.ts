@@ -79,28 +79,47 @@ async function resolveIds(
     params.datum_gte = zeitraum;
   }
 
-  // Fetch up to MAX_BATCH_SIZE + 1 *non-deleted* records. fetchFilteredList
-  // paginates server-side until that many survive the DEL filter, so a batch
-  // that happens to contain deleted rows on the first page still hits the
-  // overflow branch correctly instead of quietly undershooting.
-  //
-  // In non-fetchAll mode the helper also caps at its own safety limit (10
-  // pages × 100 rows = 1000 raw records). If the API has matches beyond that
-  // window and the DEL filter thinned earlier pages below the cap, we would
-  // silently return an undercount. meta.truncated signals exactly that case
-  // — propagate it so the caller can still trigger the overflow branch.
-  const result = await fetchFilteredList(client, `/v1/belege/${path}`, params, {
+  const mapRows = (rows: any[]) =>
+    rows.map((r) => ({ id: Number(r.id), belegnr: String(r.belegnr || "") }));
+
+  // First pass — cheap path: stop once MAX_BATCH_SIZE + 1 non-deleted rows
+  // are collected. fetchFilteredList keeps paginating through DEL-heavy
+  // pages until that target is reached, so the common case needs no second
+  // round-trip.
+  const firstPass = await fetchFilteredList(client, `/v1/belege/${path}`, params, {
     maxResults: MAX_BATCH_SIZE + 1,
     includeDeleted: false,
     skipSlim: true,
   });
+  const firstDocs = mapRows(firstPass.data as any[]);
 
+  // Clear "already over the cap" — no ambiguity, no second pass needed.
+  if (firstDocs.length > MAX_BATCH_SIZE) {
+    return { documents: firstDocs, truncated: false };
+  }
+
+  // Helper drained the API without hitting either cap → authoritative.
+  if (!firstPass.meta.truncated) {
+    return { documents: firstDocs, truncated: false };
+  }
+
+  // Ambiguous: the helper stopped at its raw-page cap (10 pages × 100 rows)
+  // without reaching 21 non-deleted records. We don't yet know whether the
+  // real result set has ≤ MAX_BATCH_SIZE valid matches (the API had more raw
+  // pages with only DEL rows, but finitely many) or more than MAX_BATCH_SIZE
+  // (the deeper pages actually contained valid documents). Re-run in
+  // fetchAll mode to disambiguate — walks up to FETCH_ALL_SAFETY_CAP (10 000
+  // raw rows) before declaring overflow. If that cap itself trips, surface
+  // truncated=true so the handler refuses conservatively for genuinely huge
+  // result sets.
+  const deepPass = await fetchFilteredList(client, `/v1/belege/${path}`, params, {
+    includeDeleted: false,
+    skipSlim: true,
+    fetchAll: true,
+  });
   return {
-    documents: (result.data as any[]).map((r) => ({
-      id: Number(r.id),
-      belegnr: String(r.belegnr || ""),
-    })),
-    truncated: result.meta.truncated,
+    documents: mapRows(deepPass.data as any[]),
+    truncated: deepPass.meta.truncated,
   };
 }
 
