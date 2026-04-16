@@ -414,19 +414,19 @@ export async function handleDocumentReadTool(
     // If the underlying fetch was truncated by MAX_LIST_RESULTS, emit a second
     // TextContent item so downstream parsers still see a clean raw stream in
     // content[0] while the LLM learns that the list is incomplete.
-    const appendTruncWarning = (text: string) => {
+    const appendTruncWarning = (text: string, cap: number = MAX_LIST_RESULTS) => {
       const content: Array<{ type: "text"; text: string }> = [{ type: "text", text }];
       if (result.meta.truncated) {
         content.push({
           type: "text",
-          text: `WARNUNG: Ergebnis wurde nach ${MAX_LIST_RESULTS} Eintraegen abgeschnitten. Verwende Filter (where, status_preset, zeitraum) oder \`limit\` um genauer einzugrenzen.`,
+          text: `WARNUNG: Ergebnis wurde nach ${cap} Eintraegen abgeschnitten. Verwende Filter (where, status_preset, zeitraum) oder \`limit\` um genauer einzugrenzen.`,
         });
       }
       return { content };
     };
-    if (filters.format === "table") return appendTruncWarning(formatAsTable(data));
-    if (filters.format === "csv") return appendTruncWarning(formatAsCsv(data));
-    if (filters.format === "ids") return appendTruncWarning(formatAsIds(data));
+    if (filters.format === "table") return appendTruncWarning(formatAsTable(data), effectiveMaxDoc);
+    if (filters.format === "csv") return appendTruncWarning(formatAsCsv(data), effectiveMaxDoc);
+    if (filters.format === "ids") return appendTruncWarning(formatAsIds(data), effectiveMaxDoc);
 
     // Build info string
     let info = `${result.meta.returned} Ergebnisse`;

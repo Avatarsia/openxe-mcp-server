@@ -88,7 +88,7 @@ const ACTION_REGISTRY: ActionEntry[] = [
   { action: "mark-invoice-paid", label: "Rechnung als bezahlt markieren", category: "belege", handler: "document", toolName: "openxe-mark-invoice-paid" },
   { action: "delete-draft-invoice", label: "Entwurfs-Rechnung loeschen", category: "belege", handler: "document", toolName: "openxe-delete-draft-invoice" },
   { action: "get-document-pdf", label: "PDF eines Belegs abrufen (typ + id)", category: "belege", handler: "document", toolName: "openxe-get-document-pdf" },
-  { action: "batch-pdf", label: "Mehrere Beleg-PDFs herunterladen (max 20, Filter: ids/status/zeitraum/where)", category: "belege", handler: "batch-pdf", toolName: "openxe-batch-pdf" },
+  { action: "batch-pdf", label: "Mehrere Beleg-PDFs herunterladen (max 20, Filter: ids/status_preset/zeitraum/where)", category: "belege", handler: "batch-pdf", toolName: "openxe-batch-pdf" },
 
   // === Beschaffung (Einkauf) ===
   { action: "list-purchase-orders", label: "Bestellungen auflisten [+Smart Filter] (Filter: status, belegnr, lieferantennummer, name, zeitraum)", category: "beschaffung", handler: "procurement", toolName: "openxe-list-purchase-orders" },

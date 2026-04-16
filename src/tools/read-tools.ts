@@ -230,24 +230,24 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
  * consumers (Excel, pandas, batch-id pipelines) can ingest it unchanged.
  * Mirrors the csv-positions pattern in document-read-tools.ts.
  */
-function withTruncationWarning(rawText: string, truncated: boolean): ToolResult {
+function withTruncationWarning(rawText: string, truncated: boolean, cap: number = MAX_LIST_RESULTS): ToolResult {
   const content: Array<{ type: "text"; text: string }> = [{ type: "text", text: rawText }];
   if (truncated) {
     content.push({
       type: "text",
-      text: `WARNUNG: Ergebnis wurde nach ${MAX_LIST_RESULTS} Eintraegen abgeschnitten. Verwende \`where\`, \`limit\` oder die tool-spezifischen Filter (siehe Tool-Beschreibung) um das Ergebnis einzugrenzen.`,
+      text: `WARNUNG: Ergebnis wurde nach ${cap} Eintraegen abgeschnitten. Verwende \`where\`, \`limit\` oder die tool-spezifischen Filter (siehe Tool-Beschreibung) um das Ergebnis einzugrenzen.`,
     });
   }
   return { content };
 }
 
-function buildListResponse(result: FilteredListResult, hint: string, format?: string, fields?: string[]): ToolResult {
+function buildListResponse(result: FilteredListResult, hint: string, format?: string, fields?: string[], cap: number = MAX_LIST_RESULTS): ToolResult {
   const data = result.data as any[];
 
   // Apply non-JSON formats BEFORE wrapping in metadata
-  if (format === "table") return withTruncationWarning(formatAsTable(data, fields), result.meta.truncated);
-  if (format === "csv") return withTruncationWarning(formatAsCsv(data, fields), result.meta.truncated);
-  if (format === "ids") return withTruncationWarning(formatAsIds(data), result.meta.truncated);
+  if (format === "table") return withTruncationWarning(formatAsTable(data, fields), result.meta.truncated, cap);
+  if (format === "csv") return withTruncationWarning(formatAsCsv(data, fields), result.meta.truncated, cap);
+  if (format === "ids") return withTruncationWarning(formatAsIds(data), result.meta.truncated, cap);
 
   // Default: json with metadata wrapper
   const response: Record<string, unknown> = {};
@@ -350,7 +350,7 @@ export async function handleReadTool(
         result.meta.returned = data.length;
       }
 
-      return buildListResponse(result, "Fuer alle Details eines Eintrags nutze openxe-get-address mit der ID.", format);
+      return buildListResponse(result, "Fuer alle Details eines Eintrags nutze openxe-get-address mit der ID.", format, undefined, effectiveMaxAddr);
     }
 
     case "openxe-get-address": {
@@ -414,7 +414,7 @@ export async function handleReadTool(
         result.meta.returned = dataArt.length;
       }
 
-      return buildListResponse(result, "Fuer alle Details eines Artikels nutze openxe-get-article mit der ID.", fmtArt);
+      return buildListResponse(result, "Fuer alle Details eines Artikels nutze openxe-get-article mit der ID.", fmtArt, undefined, effectiveMaxArt);
     }
 
     case "openxe-get-article": {
@@ -493,7 +493,7 @@ export async function handleReadTool(
         result.meta.returned = dataCat.length;
       }
 
-      return buildListResponse(result, "Fuer Details einer Kategorie nutze die jeweilige Kategorie-ID.", fmtCat);
+      return buildListResponse(result, "Fuer Details einer Kategorie nutze die jeweilige Kategorie-ID.", fmtCat, undefined, effectiveMaxCat);
     }
 
     case "openxe-list-shipping-methods": {
@@ -540,7 +540,7 @@ export async function handleReadTool(
         result.meta.returned = dataShip.length;
       }
 
-      return buildListResponse(result, "Versandarten-Liste. Nutze die ID fuer Zuordnungen.", fmtShip);
+      return buildListResponse(result, "Versandarten-Liste. Nutze die ID fuer Zuordnungen.", fmtShip, undefined, effectiveMaxShip);
     }
 
     case "openxe-list-files": {
@@ -591,7 +591,7 @@ export async function handleReadTool(
         result.meta.returned = dataFile.length;
       }
 
-      return buildListResponse(result, "Datei-Liste. Nutze die ID fuer weitere Operationen.", fmtFile);
+      return buildListResponse(result, "Datei-Liste. Nutze die ID fuer weitere Operationen.", fmtFile, undefined, effectiveMaxFile);
     }
 
     default:

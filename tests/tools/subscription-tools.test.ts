@@ -325,6 +325,114 @@ describe("Subscription Tools", () => {
     });
   });
 
+  // --- Truncation warning on non-JSON formats ---
+
+  describe("list-subscriptions truncation warning on table/csv/ids", () => {
+    /** Build N subscription records that survive the DEL filter. */
+    function makeSubscriptions(count: number) {
+      const records: any[] = [];
+      for (let i = 1; i <= count; i++) {
+        records.push({
+          id: i,
+          bezeichnung: `Abo ${i}`,
+          adresse: 100 + i,
+          artikel: 200 + i,
+          preisart: "monat",
+          preis: 9.99,
+          menge: 1,
+        });
+      }
+      return records;
+    }
+
+    /** Mock that returns `total` records split across pages of size 100. */
+    function mockMultiPage(total: number) {
+      const all = makeSubscriptions(total);
+      mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
+        const page = parseInt(params?.page ?? "1", 10);
+        const items = parseInt(params?.items ?? "100", 10);
+        const start = (page - 1) * items;
+        const slice = all.slice(start, start + items);
+        return Promise.resolve({
+          data: slice,
+          pagination: { totalCount: total, page, itemsPerPage: items },
+        });
+      });
+    }
+
+    it("format=table: appends WARNUNG as content[1] when >MAX_LIST_RESULTS records", async () => {
+      mockMultiPage(60);
+
+      const result = await handleSubscriptionTool(
+        "openxe-list-subscriptions",
+        { format: "table" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content).toHaveLength(2);
+      expect(result.content[0].text).not.toMatch(/WARNUNG/);
+      expect(result.content[1].text).toMatch(/WARNUNG.*abgeschnitten/);
+      expect(result.content[1].text).toMatch(/50/);
+    });
+
+    it("format=csv: appends WARNUNG as content[1] when >MAX_LIST_RESULTS records", async () => {
+      mockMultiPage(60);
+
+      const result = await handleSubscriptionTool(
+        "openxe-list-subscriptions",
+        { format: "csv" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.content).toHaveLength(2);
+      expect(result.content[0].text).not.toMatch(/WARNUNG/);
+      expect(result.content[1].text).toMatch(/WARNUNG.*abgeschnitten/);
+    });
+
+    it("format=ids: appends WARNUNG as content[1] when >MAX_LIST_RESULTS records", async () => {
+      mockMultiPage(60);
+
+      const result = await handleSubscriptionTool(
+        "openxe-list-subscriptions",
+        { format: "ids" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.content).toHaveLength(2);
+      expect(result.content[0].text).not.toMatch(/WARNUNG/);
+      expect(result.content[1].text).toMatch(/WARNUNG.*abgeschnitten/);
+    });
+
+    it("format=table: no warning when result set is small", async () => {
+      mockMultiPage(5);
+
+      const result = await handleSubscriptionTool(
+        "openxe-list-subscriptions",
+        { format: "table", limit: 10 },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.content).toHaveLength(1);
+      expect(result.content[0].text).not.toMatch(/WARNUNG/);
+    });
+
+    it("format=table with limit=150 + 200 records: warning says 150, not 50", async () => {
+      // Effective cap = 150 -> warning must cite 150, not MAX_LIST_RESULTS (50).
+      mockMultiPage(200);
+
+      const result = await handleSubscriptionTool(
+        "openxe-list-subscriptions",
+        { limit: 150, format: "table" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.content).toHaveLength(2);
+      expect(result.content[1].text).toMatch(/WARNUNG.*150.*abgeschnitten/);
+      expect(result.content[1].text).not.toMatch(/nach 50/);
+    });
+  });
+
   // --- Other handlers still work ---
 
   describe("other handlers", () => {

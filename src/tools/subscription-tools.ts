@@ -241,12 +241,29 @@ export const SUBSCRIPTION_TOOL_DEFINITIONS: ToolDefinition[] = [
 
 // --- Helper: build list response with metadata wrapper ---
 
-function buildListResponse(result: FilteredListResult, hint: string, format?: string, fields?: string[]): ToolResult {
+/**
+ * Appends a truncation warning as a SECOND TextContent item when the underlying
+ * fetch was truncated. Keeps content[0] as clean raw text so downstream
+ * consumers (Excel, pandas, batch-id pipelines) can ingest it unchanged.
+ * Mirrors the pattern in read-tools.ts / document-read-tools.ts.
+ */
+function withTruncationWarning(rawText: string, truncated: boolean, cap: number = MAX_LIST_RESULTS): ToolResult {
+  const content: Array<{ type: "text"; text: string }> = [{ type: "text", text: rawText }];
+  if (truncated) {
+    content.push({
+      type: "text",
+      text: `WARNUNG: Ergebnis wurde nach ${cap} Eintraegen abgeschnitten. Verwende \`where\`, \`limit\` oder die tool-spezifischen Filter (siehe Tool-Beschreibung) um das Ergebnis einzugrenzen.`,
+    });
+  }
+  return { content };
+}
+
+function buildListResponse(result: FilteredListResult, hint: string, format?: string, fields?: string[], cap: number = MAX_LIST_RESULTS): ToolResult {
   const data = result.data as any[];
 
-  if (format === "table") return { content: [{ type: "text", text: formatAsTable(data, fields) }] };
-  if (format === "csv") return { content: [{ type: "text", text: formatAsCsv(data, fields) }] };
-  if (format === "ids") return { content: [{ type: "text", text: formatAsIds(data) }] };
+  if (format === "table") return withTruncationWarning(formatAsTable(data, fields), result.meta.truncated, cap);
+  if (format === "csv") return withTruncationWarning(formatAsCsv(data, fields), result.meta.truncated, cap);
+  if (format === "ids") return withTruncationWarning(formatAsIds(data), result.meta.truncated, cap);
 
   const response: Record<string, unknown> = {};
   let info = `${result.meta.returned} Ergebnisse`;
@@ -333,7 +350,7 @@ export async function handleSubscriptionTool(
         result.meta.returned = data.length;
       }
 
-      return buildListResponse(result, "Fuer alle Details eines Abos nutze openxe-get-subscription mit der ID.", format);
+      return buildListResponse(result, "Fuer alle Details eines Abos nutze openxe-get-subscription mit der ID.", format, undefined, effectiveMaxSub);
     }
 
     case "openxe-get-subscription": {

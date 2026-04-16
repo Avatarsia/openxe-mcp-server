@@ -469,6 +469,24 @@ describe("Read Tools", () => {
       expect(parsed.data).toHaveLength(120);
     });
 
+    it("format=table with limit=150 + 200 records: warning says 150, not 50", async () => {
+      // 200 records with limit=150 -> fetchFilteredList uses maxResults=150,
+      // trims to 150, and sets meta.truncated=true. The warning text must
+      // reflect the effective cap (150), not hardcoded MAX_LIST_RESULTS (50).
+      mockMultiPage(200, "Kunde");
+
+      const result = await handleReadTool(
+        "openxe-list-addresses",
+        { limit: 150, format: "table" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.content).toHaveLength(2);
+      expect(result.content[1].text).toMatch(/WARNUNG.*150.*abgeschnitten/);
+      // Sanity: the 50 from MAX_LIST_RESULTS must NOT leak into the text.
+      expect(result.content[1].text).not.toMatch(/nach 50/);
+    });
+
     it("list-addresses without explicit limit still caps at MAX_LIST_RESULTS (50)", async () => {
       // Baseline: default behavior unchanged when no limit is set.
       mockMultiPage(150, "Kunde");
