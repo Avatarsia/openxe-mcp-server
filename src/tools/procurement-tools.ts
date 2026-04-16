@@ -110,6 +110,79 @@ export const PROCUREMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
 
 const PURCHASE_ORDER_SLIM_FIELDS = [...SLIM_FIELDS.purchaseOrder];
 
+// --- where-string parser (supports both JSON and the documented legacy form) ---
+
+/**
+ * Operators recognised by the legacy where-string syntax
+ * `field_operator_value`. Order matters — longer aliases must be tried
+ * before their prefixes (gte before gt, lte before lt, notEmpty before
+ * empty) so the splitter doesn't misidentify the operator.
+ */
+const LEGACY_WHERE_OPERATORS = [
+  "startsWith",
+  "endsWith",
+  "containsAll",
+  "containsAny",
+  "notEmpty",
+  "contains",
+  "equals",
+  "empty",
+  "range",
+  "gte",
+  "lte",
+  "gt",
+  "lt",
+  "in",
+] as const;
+
+/** Convert a scalar legacy value to number when it parses cleanly, else leave it as a string. */
+function coerceLegacyValue(raw: string): string | number {
+  const trimmed = raw.trim();
+  if (trimmed === "") return raw;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : raw;
+}
+
+/**
+ * Parse a documented legacy where-string of the form `field_operator_value`,
+ * e.g. `gesamtsumme_gte_100` → `{ gesamtsumme: { gte: 100 } }`. Returns null
+ * if the string does not look like the legacy form.
+ */
+function parseLegacyWhereString(s: string): Record<string, Record<string, any>> | null {
+  for (const op of LEGACY_WHERE_OPERATORS) {
+    const marker = `_${op}_`;
+    const idx = s.indexOf(marker);
+    if (idx > 0) {
+      const field = s.slice(0, idx);
+      const rawValue = s.slice(idx + marker.length);
+      return { [field]: { [op]: coerceLegacyValue(rawValue) } };
+    }
+    // Operators without a value suffix: `_empty` / `_notEmpty` at the end.
+    if ((op === "empty" || op === "notEmpty") && s.endsWith(`_${op}`)) {
+      const field = s.slice(0, s.length - op.length - 1);
+      if (field) return { [field]: { [op]: true } };
+    }
+  }
+  return null;
+}
+
+/**
+ * Accept a user-supplied where-string in either shape the schema
+ * advertises:
+ *  - JSON-encoded object: `{"gesamtsumme":{"gt":100}}`
+ *  - Legacy operator string: `gesamtsumme_gte_100`
+ *
+ * Anything unparseable resolves to `{}` (no filter) rather than throwing,
+ * matching the handler's previous defensive behaviour.
+ */
+function parseWhereString(s: string): Record<string, any> {
+  const trimmed = s.trim();
+  if (trimmed.startsWith("{")) {
+    try { return JSON.parse(trimmed); } catch { return {}; }
+  }
+  return parseLegacyWhereString(trimmed) ?? {};
+}
+
 // --- List Purchase Orders ---
 
 async function handleListPurchaseOrders(
@@ -189,14 +262,9 @@ async function handleListPurchaseOrders(
 
   // applyWhere — advanced client-side filter
   if (filters.where) {
-    // Parse where from string format if needed
     let whereClause: Record<string, any>;
     if (typeof filters.where === "string") {
-      try {
-        whereClause = JSON.parse(filters.where);
-      } catch {
-        whereClause = {};
-      }
+      whereClause = parseWhereString(filters.where);
     } else {
       whereClause = filters.where as Record<string, any>;
     }

@@ -276,6 +276,38 @@ describe("Procurement Tools — list-purchase-orders", () => {
       expect(parsed.data.map((d: any) => d.id).sort()).toEqual(["2", "3"]);
     });
 
+    it("accepts the documented legacy where-string 'field_operator_value' (gesamtsumme_gte_100)", async () => {
+      // The schema promises this form explicitly. Before the parser was
+      // wired up the handler ran JSON.parse and silently fell through to
+      // `{}` (no filter), returning every fixture row.
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { where: "gesamtsumme_gte_100" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data.map((d: any) => d.id).sort()).toEqual(["2", "3"]);
+    });
+
+    it("accepts legacy where-string with the lte operator", async () => {
+      mockBelegeListReturns(ordersFixture);
+
+      const result = await handleProcurementTool(
+        "openxe-list-purchase-orders",
+        { where: "gesamtsumme_lte_100" },
+        mockClient as unknown as OpenXEClient,
+      );
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      // Only id "1" has gesamtsumme <= 100 in the fixture.
+      expect(parsed.data.map((d: any) => d.id)).toEqual(["1"]);
+    });
+
     it("accepts array-form fields ['belegnr','gesamtsumme']", async () => {
       mockBelegeListReturns(ordersFixture);
 
