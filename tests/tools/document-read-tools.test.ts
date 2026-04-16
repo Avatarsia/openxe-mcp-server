@@ -444,4 +444,53 @@ describe("Document Read Tools", () => {
     expect(result.content[0].text).toContain("openxe-list-credit-memos");
     expect(mockClient.get).not.toHaveBeenCalled();
   });
+
+  // Regression test for Task P: aggregate must run across all pages, not just
+  // the first MAX_LIST_RESULTS (=50) invoices. Previously sum() silently
+  // returned the total of only the first 50 rows.
+  describe("aggregate runs on full dataset (Task P regression)", () => {
+    it("list-invoices sum:gesamtsumme sums across both pages (150 records)", async () => {
+      // 150 invoices, each with gesamtsumme = "10.00" — true total is 1500.00.
+      // Without fetchAll on aggregate, the old handler would sum only the
+      // first 50 rows (because maxResults caps the fetch) and return 500.00.
+      const all: any[] = [];
+      for (let i = 1; i <= 150; i++) {
+        all.push({
+          id: i,
+          belegnr: `RE-2026-${String(i).padStart(4, "0")}`,
+          kundennummer: `K${1000 + i}`,
+          gesamtsumme: "10.00",
+        });
+      }
+      mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
+        const page = parseInt(params?.page ?? "1", 10);
+        const items = parseInt(params?.items ?? "100", 10);
+        const start = (page - 1) * items;
+        const slice = all.slice(start, start + items);
+        return Promise.resolve({
+          data: slice,
+          pagination: { totalCount: all.length, page, itemsPerPage: items },
+        });
+      });
+
+      const result = await handleDocumentReadTool(
+        "openxe-list-invoices",
+        { aggregate: { sum: "gesamtsumme" } },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      // With the fix: sum over ALL 150 records = 1500.
+      // Without the fix: sum over first 50 records only = 500.
+      expect(parsed.sum).toBe(1500);
+
+      // Sanity: both pages must have been requested.
+      const pages = mockClient.get.mock.calls
+        .map((c: any[]) => c[1]?.page)
+        .filter((p: string | undefined): p is string => p !== undefined);
+      expect(pages).toContain("1");
+      expect(pages).toContain("2");
+    });
+  });
 });

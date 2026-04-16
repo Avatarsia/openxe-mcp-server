@@ -311,11 +311,16 @@ export async function handleDocumentReadTool(
 
     const slimFields = LIST_TOOL_SLIM[toolName];
     const effectiveMaxDoc = typeof filters.limit === "number" && filters.limit > MAX_LIST_RESULTS ? filters.limit : MAX_LIST_RESULTS;
+    // aggregate/sort_field MUST run on the full dataset, not just the first
+    // page — otherwise count/sum/top-N are silently wrong when more than
+    // MAX_LIST_RESULTS records exist. skipSlim must also be on, so the field
+    // referenced by aggregate/sort is still present when those ops run.
+    const needsFullScanDoc = !!(filters.where || needsPositions || filters.aggregate || filters.sort_field);
     const result = await fetchFilteredList(client, `/v1/belege/${listPath}`, params, {
       slimFields: [...slimFields],
       includeDeleted: filters.include_deleted,
-      skipSlim: !!(filters.where || filters.fields || needsPositions),
-      fetchAll: !!(filters.where || needsPositions),
+      skipSlim: !!(filters.where || filters.fields || needsPositions || filters.aggregate || filters.sort_field),
+      fetchAll: needsFullScanDoc,
       maxResults: effectiveMaxDoc,
     });
 

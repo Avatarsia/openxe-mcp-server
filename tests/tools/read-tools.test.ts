@@ -503,4 +503,86 @@ describe("Read Tools", () => {
       expect(parsed._info).toMatch(/gekuerzt/);
     });
   });
+
+  // Regression tests for Task P: aggregate and sort_field must operate on the
+  // full dataset, not just the first MAX_LIST_RESULTS (=50) records. Without
+  // the fix, count/sum/top-N would silently compute over a truncated window.
+  describe("aggregate/sort_field run on full dataset (Task P regression)", () => {
+    /** Mock that returns `total` records across pages of size 100. */
+    function mockMultiPageCustom(all: any[]) {
+      mockClient.get.mockImplementation((_path: string, params?: Record<string, any>) => {
+        const page = parseInt(params?.page ?? "1", 10);
+        const items = parseInt(params?.items ?? "100", 10);
+        const start = (page - 1) * items;
+        const slice = all.slice(start, start + items);
+        return Promise.resolve({
+          data: slice,
+          pagination: { totalCount: all.length, page, itemsPerPage: items },
+        });
+      });
+    }
+
+    it("list-addresses aggregate:count on 150 records (2 pages) returns 150 not 50", async () => {
+      const all: any[] = [];
+      for (let i = 1; i <= 150; i++) {
+        all.push({ id: i, name: `Kunde ${i}`, kundennummer: `K${1000 + i}` });
+      }
+      mockMultiPageCustom(all);
+
+      const result = await handleReadTool(
+        "openxe-list-addresses",
+        { aggregate: "count" },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      // Without fetchAll on aggregate, this would be 50 (first page cap).
+      expect(parsed.count).toBe(150);
+
+      // Verify both pages were actually fetched.
+      const pages = mockClient.get.mock.calls
+        .map((c: any[]) => c[1]?.page)
+        .filter((p: string | undefined): p is string => p !== undefined);
+      expect(pages).toContain("1");
+      expect(pages).toContain("2");
+    });
+
+    it("list-addresses sort_field=name limit=3 on 150 shuffled records picks global top 3", async () => {
+      // Build 150 records where the globally alphabetically smallest names
+      // ("Aaa001", "Aaa002", "Aaa003") sit on page 2 (indices 100, 101, 102).
+      // The first 50 records (and the full first page of 100) contain only
+      // names starting with "M..." onwards. Without fetchAll, sort+limit
+      // would see only those and return the wrong top 3.
+      const all: any[] = [];
+      // Page 1: 100 records, all with names like "Mxxx"+index
+      for (let i = 1; i <= 100; i++) {
+        all.push({ id: i, name: `Mkunde ${String(i).padStart(3, "0")}` });
+      }
+      // Page 2: first 3 are the true alphabetical winners
+      all.push({ id: 101, name: "Aaa001" });
+      all.push({ id: 102, name: "Aaa002" });
+      all.push({ id: 103, name: "Aaa003" });
+      // Filler so we hit 150 total across 2 pages
+      for (let i = 104; i <= 150; i++) {
+        all.push({ id: i, name: `Zfill ${i}` });
+      }
+      mockMultiPageCustom(all);
+
+      const result = await handleReadTool(
+        "openxe-list-addresses",
+        { sort_field: "name", sort_order: "asc", limit: 3 },
+        mockClient as unknown as OpenXEClient
+      );
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      // With the fix: true global top-3 are Aaa001/Aaa002/Aaa003 (ids 101-103).
+      // Without the fix: top-3 would come from the first 50 records only
+      //   (all starting with "Mkunde ..."), so ids 1-3 with names "Mkunde 001"..
+      expect(parsed.data).toHaveLength(3);
+      expect(parsed.data.map((a: any) => a.id)).toEqual([101, 102, 103]);
+      expect(parsed.data.map((a: any) => a.name)).toEqual(["Aaa001", "Aaa002", "Aaa003"]);
+    });
+  });
 });

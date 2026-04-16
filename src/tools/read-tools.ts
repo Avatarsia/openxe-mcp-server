@@ -285,11 +285,16 @@ export async function handleReadTool(
       if (serverParams.kundennummer) apiParams.kundennummer = serverParams.kundennummer;
 
       const effectiveMaxAddr = typeof limit === "number" && limit > MAX_LIST_RESULTS ? limit : MAX_LIST_RESULTS;
+      // aggregate/sort_field MUST run against the full result set, not just the
+      // first page. Forcing fetchAll here makes the advertised functionality
+      // actually deliver correct counts/sums/top-N. skipSlim must match so the
+      // requested sort/agg field isn't stripped out before the operation runs.
+      const needsFullScanAddr = !!(where || nameFilter || email || land || aggregate || sort_field);
       const result = await fetchFilteredList(client, "/v1/adressen", apiParams, {
         slimFields: SLIM_FIELDS.address,
         includeDeleted: include_deleted,
-        skipSlim: !!(where || fields || nameFilter || email || land),
-        fetchAll: !!(where || nameFilter || email || land),
+        skipSlim: !!(where || fields || nameFilter || email || land || aggregate || sort_field),
+        fetchAll: needsFullScanAddr,
         maxResults: effectiveMaxAddr,
       });
 
@@ -374,11 +379,13 @@ export async function handleReadTool(
       if (filterArgs.include) apiParams.include = filterArgs.include;
 
       const effectiveMaxArt = typeof limArt === "number" && limArt > MAX_LIST_RESULTS ? limArt : MAX_LIST_RESULTS;
+      // aggregate/sort_field need the full dataset, not just the first page.
+      const needsFullScanArt = !!(whereArt || aggArt || sfArt);
       const result = await fetchFilteredList(client, "/v1/artikel", apiParams, {
         slimFields: SLIM_FIELDS.article,
         includeDeleted: includeDeletedArt,
-        skipSlim: !!(whereArt || fldsArt),
-        fetchAll: !!whereArt,
+        skipSlim: !!(whereArt || fldsArt || aggArt || sfArt),
+        fetchAll: needsFullScanArt,
         maxResults: effectiveMaxArt,
       });
 
@@ -454,11 +461,13 @@ export async function handleReadTool(
       if (filterArgs.projekt) apiParams.projekt = filterArgs.projekt;
 
       const effectiveMaxCat = typeof limCat === "number" && limCat > MAX_LIST_RESULTS ? limCat : MAX_LIST_RESULTS;
+      // aggregate/sort_field need the full dataset, not just the first page.
+      const needsFullScanCat = !!(whereCat || aggCat || sfCat);
       const result = await fetchFilteredList(client, "/v1/artikelkategorien", apiParams, {
         slimFields: SLIM_FIELDS.category,
         includeDeleted: includeDeletedCat,
-        skipSlim: !!(whereCat || fldsCat),
-        fetchAll: !!whereCat,
+        skipSlim: !!(whereCat || fldsCat || aggCat || sfCat),
+        fetchAll: needsFullScanCat,
         maxResults: effectiveMaxCat,
       });
 
@@ -501,11 +510,13 @@ export async function handleReadTool(
       const { include_deleted: includeDeletedShip, sort_field: sfShip, sort_order: soShip, limit: limShip, fields: fldsShip, aggregate: aggShip, format: fmtShip, where: whereShip } = args;
 
       const effectiveMaxShip = typeof limShip === "number" && limShip > MAX_LIST_RESULTS ? limShip : MAX_LIST_RESULTS;
+      // aggregate/sort_field need the full dataset, not just the first page.
+      const needsFullScanShip = !!(whereShip || aggShip || sfShip);
       const result = await fetchFilteredList(client, "/v1/versandarten", {}, {
         slimFields: SLIM_FIELDS.shippingMethod,
         includeDeleted: includeDeletedShip,
-        skipSlim: !!(whereShip || fldsShip),
-        fetchAll: !!whereShip,
+        skipSlim: !!(whereShip || fldsShip || aggShip || sfShip),
+        fetchAll: needsFullScanShip,
         maxResults: effectiveMaxShip,
       });
 
@@ -552,11 +563,13 @@ export async function handleReadTool(
       if (filterArgs.stichwort) apiParams.stichwort = filterArgs.stichwort;
 
       const effectiveMaxFile = typeof limFile === "number" && limFile > MAX_LIST_RESULTS ? limFile : MAX_LIST_RESULTS;
+      // aggregate/sort_field need the full dataset, not just the first page.
+      const needsFullScanFile = !!(whereFile || aggFile || sfFile);
       const result = await fetchFilteredList(client, "/v1/dateien", apiParams, {
         slimFields: SLIM_FIELDS.file,
         includeDeleted: includeDeletedFile,
-        skipSlim: !!(whereFile || fldsFile),
-        fetchAll: !!whereFile,
+        skipSlim: !!(whereFile || fldsFile || aggFile || sfFile),
+        fetchAll: needsFullScanFile,
         maxResults: effectiveMaxFile,
       });
 

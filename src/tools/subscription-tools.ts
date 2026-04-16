@@ -298,11 +298,13 @@ export async function handleSubscriptionTool(
       if (serverParams.projekt) apiParams.projekt = serverParams.projekt;
 
       const effectiveMaxSub = typeof limit === "number" && limit > MAX_LIST_RESULTS ? limit : MAX_LIST_RESULTS;
+      // aggregate/sort_field need the full dataset, not just the first page.
+      const needsFullScanSub = !!(where || bezeichnung || aggregate || sort_field);
       const result = await fetchFilteredList(client, "/v1/aboartikel", apiParams, {
         slimFields: [...SUBSCRIPTION_SLIM_FIELDS],
         includeDeleted: include_deleted,
-        skipSlim: !!(where || fields || bezeichnung),
-        fetchAll: !!(where || bezeichnung),
+        skipSlim: !!(where || fields || bezeichnung || aggregate || sort_field),
+        fetchAll: needsFullScanSub,
         maxResults: effectiveMaxSub,
       });
 
