@@ -395,3 +395,106 @@ describe("OpenXEClient", () => {
     });
   });
 });
+
+describe("API path auto-detection", () => {
+  const autoConfig: OpenXEConfig = {
+    baseUrl: "https://erp.test",
+    apiPath: null,
+    username: "testuser",
+    password: "testpass",
+    timeout: 5000,
+  };
+
+  const digestChallenge = () => ({
+    status: 401,
+    headers: new Map([
+      ["www-authenticate", 'Digest realm="Xentral-API", qop="auth", nonce="n1", opaque="o1"'],
+    ]),
+    text: async () => "",
+  });
+
+  const apacheForbidden = () => ({
+    status: 403,
+    headers: new Map(),
+    text: async () => "<html><body><h1>Forbidden</h1></body></html>",
+  });
+
+  beforeEach(() => mockFetch.mockReset());
+
+  it("detects path lazily on first request and caches it", async () => {
+    const client = new OpenXEClient(autoConfig, mockFetch as any);
+    // Probe 1: /api/index.php blocked, Probe 2: /www/api/index.php hit
+    mockFetch.mockResolvedValueOnce(apacheForbidden());
+    mockFetch.mockResolvedValueOnce(digestChallenge());
+    // Request: Digest handshake (401) + data (200)
+    mockFetch.mockResolvedValueOnce(digestChallenge());
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      headers: new Map(),
+      json: async () => [{ id: 1 }],
+    });
+
+    const result = await client.get("/v1/adressen");
+    expect(result.data).toEqual([{ id: 1 }]);
+    expect(mockFetch.mock.calls[2][0]).toContain("https://erp.test/www/api/index.php/v1/adressen");
+
+    // Second request: no further probes
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      headers: new Map(),
+      json: async () => [{ id: 2 }],
+    });
+    await client.get("/v1/artikel");
+    expect(mockFetch).toHaveBeenCalledTimes(5);
+  });
+
+  it("skips detection entirely when apiPath is explicit", async () => {
+    const fixedConfig: OpenXEConfig = { ...autoConfig, apiPath: "/api/index.php" };
+    const client = new OpenXEClient(fixedConfig, mockFetch as any);
+    mockFetch.mockResolvedValueOnce(digestChallenge());
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      headers: new Map(),
+      json: async () => [],
+    });
+    await client.get("/v1/adressen");
+    expect(mockFetch.mock.calls[0][0]).toBe("https://erp.test/api/index.php/v1/adressen");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("runs only one probe series for parallel first requests", async () => {
+    const client = new OpenXEClient(autoConfig, mockFetch as any);
+    mockFetch.mockResolvedValueOnce(digestChallenge()); // probe hit on first candidate
+    mockFetch.mockResolvedValue({
+      status: 200,
+      headers: new Map(),
+      json: async () => [],
+      text: async () => "[]",
+    });
+
+    await Promise.all([client.get("/v1/adressen"), client.get("/v1/artikel")]);
+    const probeCalls = mockFetch.mock.calls.filter(
+      (c) =>
+        String(c[0]).includes("/v1/adressen?limit=1") &&
+        c[1]?.headers?.Authorization === undefined
+    );
+    expect(probeCalls.length).toBe(1);
+  });
+
+  it("startApiPathDetection never throws when server is offline", async () => {
+    const client = new OpenXEClient(autoConfig, mockFetch as any);
+    mockFetch.mockRejectedValue(new TypeError("fetch failed: ECONNREFUSED"));
+    expect(() => client.startApiPathDetection()).not.toThrow();
+    await new Promise((r) => setImmediate(r)); // let the eager promise settle
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValueOnce(digestChallenge()); // probe hit
+    mockFetch.mockResolvedValueOnce(digestChallenge()); // handshake
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      headers: new Map(),
+      json: async () => [],
+    });
+    const result = await client.get("/v1/adressen");
+    expect(result.data).toEqual([]);
+  });
+});

@@ -1,5 +1,6 @@
 import { DigestAuth } from "./digest-auth.js";
 import type { OpenXEConfig } from "../config.js";
+import { detectApiPath } from "./api-path-detector.js";
 
 export interface Pagination {
   totalCount: number;
@@ -55,6 +56,8 @@ type FetchFn = typeof globalThis.fetch;
 export class OpenXEClient {
   private auth: DigestAuth;
   private fetchFn: FetchFn;
+  private resolvedApiPath: string | null;
+  private detectionPromise: Promise<string> | null = null;
 
   constructor(
     private config: OpenXEConfig,
@@ -62,6 +65,52 @@ export class OpenXEClient {
   ) {
     this.auth = new DigestAuth(config.username, config.password);
     this.fetchFn = fetchFn ?? globalThis.fetch.bind(globalThis);
+    this.resolvedApiPath = config.apiPath;
+  }
+
+  /**
+   * Resolve the effective API base URL. With an explicit apiPath this is
+   * static; otherwise the path is auto-detected once and cached for the
+   * process lifetime. A failed detection clears the cache so the next
+   * request retries (lazy fallback).
+   */
+  private async apiBase(): Promise<string> {
+    if (this.resolvedApiPath !== null) {
+      return `${this.config.baseUrl}${this.resolvedApiPath}`;
+    }
+    if (!this.detectionPromise) {
+      this.detectionPromise = detectApiPath(
+        this.config.baseUrl,
+        this.fetchFn,
+        this.config.timeout
+      );
+    }
+    try {
+      const path = await this.detectionPromise;
+      if (this.resolvedApiPath === null) {
+        this.resolvedApiPath = path;
+        console.error(`[openxe-mcp] OpenXE API path detected: ${path}`);
+      }
+      return `${this.config.baseUrl}${this.resolvedApiPath}`;
+    } catch (err) {
+      this.detectionPromise = null;
+      throw err;
+    }
+  }
+
+  /**
+   * Eager detection at server startup. Never throws — an unreachable
+   * OpenXE must not prevent the MCP server from starting; the next
+   * request retries lazily.
+   */
+  startApiPathDetection(): void {
+    if (this.config.apiPath !== null) return;
+    void this.apiBase().catch((err) => {
+      const reason = err instanceof Error ? err.message.split("\n")[0] : String(err);
+      console.error(
+        `[openxe-mcp] API path detection at startup failed (${reason}) — will retry on first request.`
+      );
+    });
   }
 
   /**
@@ -76,7 +125,7 @@ export class OpenXEClient {
     path: string,
     params?: Record<string, string | number | undefined>
   ): Promise<ApiResponse<T>> {
-    const url = this.buildUrl(path, params);
+    const url = this.buildUrl(await this.apiBase(), path, params);
 
     let response: Response;
     try {
@@ -122,7 +171,7 @@ export class OpenXEClient {
     path: string,
     params?: Record<string, string>
   ): Promise<{ data: Buffer; contentType: string }> {
-    const url = this.buildUrl(path, params);
+    const url = this.buildUrl(await this.apiBase(), path, params);
     const response = await this.authenticatedRequest("GET", url);
 
     const contentType = response.headers.get("content-type") ?? "application/octet-stream";
@@ -139,7 +188,7 @@ export class OpenXEClient {
     path: string,
     body: Record<string, unknown>
   ): Promise<ApiResponse<T>> {
-    const url = this.buildUrl(path);
+    const url = this.buildUrl(await this.apiBase(), path);
     const response = await this.authenticatedRequest("POST", url, body);
     const data = (await response.json()) as T;
     return { data };
@@ -153,7 +202,7 @@ export class OpenXEClient {
     path: string,
     data: Record<string, string>
   ): Promise<ApiResponse<T>> {
-    const url = this.buildUrl(path);
+    const url = this.buildUrl(await this.apiBase(), path);
     const rawBody = new URLSearchParams(data).toString();
     const response = await this.authenticatedRequest("POST", url, undefined, {
       rawBody,
@@ -170,7 +219,7 @@ export class OpenXEClient {
     path: string,
     body: Record<string, unknown>
   ): Promise<ApiResponse<T>> {
-    const url = this.buildUrl(path);
+    const url = this.buildUrl(await this.apiBase(), path);
     const response = await this.authenticatedRequest("PUT", url, body);
     const data = (await response.json()) as T;
     return { data };
@@ -180,7 +229,7 @@ export class OpenXEClient {
    * DELETE a REST v1 resource.
    */
   async delete(path: string): Promise<void> {
-    const url = this.buildUrl(path);
+    const url = this.buildUrl(await this.apiBase(), path);
     const response = await this.authenticatedRequest("DELETE", url);
     if (response.status !== 204) {
       await this.handleErrorResponse(response);
@@ -198,7 +247,7 @@ export class OpenXEClient {
     action: string,
     data: Record<string, unknown>
   ): Promise<LegacyResponse<T>> {
-    const url = `${this.config.baseUrl}/${action}`;
+    const url = `${await this.apiBase()}/${action}`;
     const response = await this.authenticatedRequest("POST", url, {
       data,
     });
@@ -315,10 +364,11 @@ export class OpenXEClient {
   }
 
   private buildUrl(
+    base: string,
     path: string,
     params?: Record<string, string | number | undefined>
   ): string {
-    const url = new URL(`${this.config.baseUrl}${path}`);
+    const url = new URL(`${base}${path}`);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
         if (value !== undefined) {
