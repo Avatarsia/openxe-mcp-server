@@ -552,6 +552,7 @@ describe("self-healing on Apache-blocked paths", () => {
     expect(result.data).toEqual([{ id: 7 }]);
     const lastUrl = String(mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0]);
     expect(lastUrl).toContain("/www/api/index.php/");
+    expect(mockFetch).toHaveBeenCalledTimes(7); // exactly one retry, no second healing round
   });
 
   it("throws enriched error when re-detection finds the same path", async () => {
