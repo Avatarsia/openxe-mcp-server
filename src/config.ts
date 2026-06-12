@@ -2,10 +2,10 @@ import { z } from "zod";
 
 const EnvSchema = z.object({
   OPENXE_URL: z.string().url("OPENXE_URL must be a valid URL").transform((url) => url.replace(/\/+$/, "")),
-  OPENXE_API_PATH: z
-    .string()
-    .transform((p) => "/" + p.replace(/^\/+|\/+$/g, ""))
-    .optional(),
+  OPENXE_API_PATH: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().transform((p) => "/" + p.replace(/^\/+|\/+$/g, "")).optional()
+  ),
   OPENXE_USERNAME: z.string().min(1, "OPENXE_USERNAME is required"),
   OPENXE_PASSWORD: z.string().min(1, "OPENXE_PASSWORD is required"),
   OPENXE_TIMEOUT: z.coerce.number().positive().default(30000),

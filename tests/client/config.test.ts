@@ -75,4 +75,13 @@ describe("loadConfig", () => {
     const config = loadConfig();
     expect(config.timeout).toBe(60000);
   });
+
+  it("treats empty OPENXE_API_PATH as unset", () => {
+    process.env.OPENXE_URL = "https://erp.example.com";
+    process.env.OPENXE_USERNAME = "apiuser";
+    process.env.OPENXE_PASSWORD = "secret123";
+    process.env.OPENXE_API_PATH = "";
+    const config = loadConfig();
+    expect(config.apiPath).toBeNull();
+  });
 });

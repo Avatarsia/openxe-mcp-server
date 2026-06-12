@@ -30,7 +30,7 @@ import { filterDeleted } from "../../src/utils/field-filter.js";
 // ---------------------------------------------------------------------------
 
 const baseUrl = process.env.OPENXE_URL
-  ? `${process.env.OPENXE_URL}/api/index.php`
+  ? process.env.OPENXE_URL.replace(/\/+$/, "")
   : undefined;
 const username = process.env.OPENXE_USERNAME;
 const password = process.env.OPENXE_PASSWORD;
