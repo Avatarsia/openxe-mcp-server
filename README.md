@@ -259,9 +259,16 @@ Wenn `OPENXE_API_PATH` nicht gesetzt ist, erkennt der Server den API-Pfad beim S
 
 ### Der KI-Assistent findet keine Daten
 
-- Pruefe ob die OpenXE-URL erreichbar ist: `curl http://dein-openxe-server/api/index.php`
+- Pruefe die Server-Konsole (stderr): bei erfolgreichem Start erscheint `[openxe-mcp] OpenXE API path detected: ...`. Schlaegt die Erkennung fehl, listet die Meldung alle getesteten Pfade samt HTTP-Status auf
+- Pruefe ob die OpenXE-URL erreichbar ist: `curl http://dein-openxe-server/` (sollte einen Redirect auf die Login-Seite liefern)
 - Pruefe ob Benutzername und Passwort stimmen
 - Pruefe ob die Umgebungsvariablen korrekt gesetzt sind
+
+### HTTP 403 / HTML-Fehlerseite statt API-Antwort
+
+- Apache blockt den angefragten Pfad, bevor er OpenXE erreicht (z.B. nach Server-Umzug oder geaendertem DocumentRoot)
+- Wenn `OPENXE_API_PATH` gesetzt ist: Eintrag entfernen, damit die automatische Erkennung den korrekten Pfad findet
+- Ohne `OPENXE_API_PATH` heilt sich der Server bei Pfad-Aenderungen selbst (einmalige Neu-Erkennung + Wiederholung der Anfrage)
 
 ### Authentifizierung schlaegt fehl
 
@@ -339,10 +346,11 @@ src/
   resources/        # Resource Handler (Lesen via REST v1)
   schemas/          # Zod-Schemas fuer Eingabe-Validierung
   utils/            # Smart Filters, Pagination, Aggregation
-tests/              # 369 Unit-Tests (Vitest)
+tests/              # 548 Unit-Tests (Vitest)
 docs/
   api-reference/    # Verifizierte OpenXE API-Dokumentation
   llm/              # LLM-optimierte Kurzreferenz
+  superpowers/      # Design-Specs und Implementierungsplaene
 ```
 
 ### Lokal entwickeln
@@ -386,7 +394,6 @@ Verifizierte Dokumentation im Verzeichnis `docs/api-reference/`:
 | Protokoll fehlt bei API-Weiterfuehren | [#244](https://github.com/OpenXE-org/OpenXE/issues/244) | -- |
 | Datei-Upload ignoriert stichwoerter | [#245](https://github.com/OpenXE-org/OpenXE/issues/245), PR [#246](https://github.com/OpenXE-org/OpenXE/pull/246) | -- |
 | Tracking in falscher Tabelle | [#247](https://github.com/OpenXE-org/OpenXE/issues/247), PR [#248](https://github.com/OpenXE-org/OpenXE/pull/248) | -- |
-| Gemma 4 schein Inkompatibel zu sein| -- |
 
 ## Lizenz
 
