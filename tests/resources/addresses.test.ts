@@ -26,6 +26,7 @@ const mockServer = {
 const mockFetch = vi.fn();
 const config: OpenXEConfig = {
   baseUrl: "https://erp.test/api",
+  apiPath: "",
   username: "testuser",
   password: "testpass",
   timeout: 5000,

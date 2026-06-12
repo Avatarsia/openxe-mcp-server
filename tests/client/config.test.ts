@@ -9,8 +9,10 @@ describe("loadConfig", () => {
     process.env.OPENXE_URL = "https://erp.example.com";
     process.env.OPENXE_USERNAME = "apiuser";
     process.env.OPENXE_PASSWORD = "secret123";
+    delete process.env.OPENXE_API_PATH;
     const config = loadConfig();
-    expect(config.baseUrl).toBe("https://erp.example.com/api/index.php");
+    expect(config.baseUrl).toBe("https://erp.example.com");
+    expect(config.apiPath).toBeNull();
     expect(config.username).toBe("apiuser");
     expect(config.password).toBe("secret123");
     expect(config.timeout).toBe(30000);
@@ -20,8 +22,9 @@ describe("loadConfig", () => {
     process.env.OPENXE_URL = "https://erp.example.com/";
     process.env.OPENXE_USERNAME = "apiuser";
     process.env.OPENXE_PASSWORD = "secret123";
+    delete process.env.OPENXE_API_PATH;
     const config = loadConfig();
-    expect(config.baseUrl).toBe("https://erp.example.com/api/index.php");
+    expect(config.baseUrl).toBe("https://erp.example.com");
   });
 
   it("allows overriding API path via OPENXE_API_PATH", () => {
@@ -30,7 +33,17 @@ describe("loadConfig", () => {
     process.env.OPENXE_PASSWORD = "secret123";
     process.env.OPENXE_API_PATH = "/api";
     const config = loadConfig();
-    expect(config.baseUrl).toBe("https://erp.example.com/api");
+    expect(config.baseUrl).toBe("https://erp.example.com");
+    expect(config.apiPath).toBe("/api");
+  });
+
+  it("returns apiPath null when OPENXE_API_PATH is unset (auto-detection)", () => {
+    process.env.OPENXE_URL = "https://erp.example.com";
+    process.env.OPENXE_USERNAME = "apiuser";
+    process.env.OPENXE_PASSWORD = "secret123";
+    delete process.env.OPENXE_API_PATH;
+    const config = loadConfig();
+    expect(config.apiPath).toBeNull();
   });
 
   it("throws on missing OPENXE_URL", () => {

@@ -39,6 +39,7 @@ const password = process.env.OPENXE_PASSWORD;
 const client = (baseUrl && username && password)
   ? new OpenXEClient({
       baseUrl,
+      apiPath: null,
       username,
       password,
       timeout: 30000,

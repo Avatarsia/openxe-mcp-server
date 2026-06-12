@@ -8,6 +8,7 @@ const mockFetch = vi.fn();
 describe("handleArticleResource", () => {
   const config: OpenXEConfig = {
     baseUrl: "https://erp.test/api",
+    apiPath: "",
     username: "testuser",
     password: "testpass",
     timeout: 5000,

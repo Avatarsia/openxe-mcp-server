@@ -11,6 +11,7 @@ const mockFetch = vi.fn();
 describe("OpenXEClient", () => {
   const config: OpenXEConfig = {
     baseUrl: "https://erp.test/api",
+    apiPath: "",
     username: "testuser",
     password: "testpass",
     timeout: 5000,
