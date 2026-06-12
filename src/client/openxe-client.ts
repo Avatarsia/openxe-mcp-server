@@ -1,6 +1,6 @@
 import { DigestAuth } from "./digest-auth.js";
 import type { OpenXEConfig } from "../config.js";
-import { detectApiPath } from "./api-path-detector.js";
+import { detectApiPath, API_PATH_CANDIDATES } from "./api-path-detector.js";
 
 export interface Pagination {
   totalCount: number;
@@ -28,6 +28,21 @@ export class OpenXEApiError extends Error {
   ) {
     super(message);
     this.name = "OpenXEApiError";
+  }
+}
+
+/**
+ * Thrown when an error response body is not JSON — typically an Apache
+ * HTML error page, which means the request never reached OpenXE.
+ */
+export class UnparseableBodyError extends OpenXEApiError {
+  constructor(
+    httpCode: number,
+    public readonly bodyKind: "html" | "empty" | "unknown",
+    message: string
+  ) {
+    super(7499, httpCode, message);
+    this.name = "UnparseableBodyError";
   }
 }
 
@@ -125,24 +140,28 @@ export class OpenXEClient {
     path: string,
     params?: Record<string, string | number | undefined>
   ): Promise<ApiResponse<T>> {
-    const url = this.buildUrl(await this.apiBase(), path, params);
+    return this.withSelfHealing(async (base) => {
+      const url = this.buildUrl(base, path, params);
 
-    let response: Response;
-    try {
-      response = await this.authenticatedRequest("GET", url);
-    } catch (err) {
-      // authenticatedRequest calls handleErrorResponse for >= 400.
-      // Intercept 404 before it becomes a fatal OpenXEApiError.
-      if (err instanceof OpenXEApiError && err.httpCode === 404) {
-        return this.handle404<T>(path);
+      let response: Response;
+      try {
+        response = await this.authenticatedRequest("GET", url);
+      } catch (err) {
+        if (
+          err instanceof OpenXEApiError &&
+          err.httpCode === 404 &&
+          !(err instanceof UnparseableBodyError && err.bodyKind === "html")
+        ) {
+          return this.handle404<T>(path);
+        }
+        throw err;
       }
-      throw err;
-    }
 
-    const data = (await response.json()) as T;
-    const pagination = this.extractPagination(response.headers);
+      const data = (await response.json()) as T;
+      const pagination = this.extractPagination(response.headers);
 
-    return { data, pagination };
+      return { data, pagination };
+    });
   }
 
   /**
@@ -171,14 +190,16 @@ export class OpenXEClient {
     path: string,
     params?: Record<string, string>
   ): Promise<{ data: Buffer; contentType: string }> {
-    const url = this.buildUrl(await this.apiBase(), path, params);
-    const response = await this.authenticatedRequest("GET", url);
+    return this.withSelfHealing(async (base) => {
+      const url = this.buildUrl(base, path, params);
+      const response = await this.authenticatedRequest("GET", url);
 
-    const contentType = response.headers.get("content-type") ?? "application/octet-stream";
-    const arrayBuf = await response.arrayBuffer();
-    const data = Buffer.from(arrayBuf);
+      const contentType = response.headers.get("content-type") ?? "application/octet-stream";
+      const arrayBuf = await response.arrayBuffer();
+      const data = Buffer.from(arrayBuf);
 
-    return { data, contentType };
+      return { data, contentType };
+    });
   }
 
   /**
@@ -188,10 +209,12 @@ export class OpenXEClient {
     path: string,
     body: Record<string, unknown>
   ): Promise<ApiResponse<T>> {
-    const url = this.buildUrl(await this.apiBase(), path);
-    const response = await this.authenticatedRequest("POST", url, body);
-    const data = (await response.json()) as T;
-    return { data };
+    return this.withSelfHealing(async (base) => {
+      const url = this.buildUrl(base, path);
+      const response = await this.authenticatedRequest("POST", url, body);
+      const data = (await response.json()) as T;
+      return { data };
+    });
   }
 
   /**
@@ -202,14 +225,16 @@ export class OpenXEClient {
     path: string,
     data: Record<string, string>
   ): Promise<ApiResponse<T>> {
-    const url = this.buildUrl(await this.apiBase(), path);
-    const rawBody = new URLSearchParams(data).toString();
-    const response = await this.authenticatedRequest("POST", url, undefined, {
-      rawBody,
-      contentType: "application/x-www-form-urlencoded",
+    return this.withSelfHealing(async (base) => {
+      const url = this.buildUrl(base, path);
+      const rawBody = new URLSearchParams(data).toString();
+      const response = await this.authenticatedRequest("POST", url, undefined, {
+        rawBody,
+        contentType: "application/x-www-form-urlencoded",
+      });
+      const responseData = (await response.json()) as T;
+      return { data: responseData };
     });
-    const responseData = (await response.json()) as T;
-    return { data: responseData };
   }
 
   /**
@@ -219,21 +244,25 @@ export class OpenXEClient {
     path: string,
     body: Record<string, unknown>
   ): Promise<ApiResponse<T>> {
-    const url = this.buildUrl(await this.apiBase(), path);
-    const response = await this.authenticatedRequest("PUT", url, body);
-    const data = (await response.json()) as T;
-    return { data };
+    return this.withSelfHealing(async (base) => {
+      const url = this.buildUrl(base, path);
+      const response = await this.authenticatedRequest("PUT", url, body);
+      const data = (await response.json()) as T;
+      return { data };
+    });
   }
 
   /**
    * DELETE a REST v1 resource.
    */
   async delete(path: string): Promise<void> {
-    const url = this.buildUrl(await this.apiBase(), path);
-    const response = await this.authenticatedRequest("DELETE", url);
-    if (response.status !== 204) {
-      await this.handleErrorResponse(response);
-    }
+    return this.withSelfHealing(async (base) => {
+      const url = this.buildUrl(base, path);
+      const response = await this.authenticatedRequest("DELETE", url);
+      if (response.status !== 204) {
+        await this.handleErrorResponse(response);
+      }
+    });
   }
 
   /**
@@ -247,48 +276,50 @@ export class OpenXEClient {
     action: string,
     data: Record<string, unknown>
   ): Promise<LegacyResponse<T>> {
-    const url = `${await this.apiBase()}/${action}`;
-    const response = await this.authenticatedRequest("POST", url, {
-      data,
-    });
+    return this.withSelfHealing(async (base) => {
+      const url = `${base}/${action}`;
+      const response = await this.authenticatedRequest("POST", url, {
+        data,
+      });
 
-    const contentType = response.headers.get("content-type") ?? "";
-    const text = await response.text();
+      const contentType = response.headers.get("content-type") ?? "";
+      const text = await response.text();
 
-    let result: LegacyResponse<T>;
+      let result: LegacyResponse<T>;
 
-    const isXml = contentType.includes("xml")
-      || text.trimStart().startsWith("<?xml")
-      || (text.trimStart().startsWith("<") && !text.trimStart().startsWith("<!")); // not HTML doctype
+      const isXml = contentType.includes("xml")
+        || text.trimStart().startsWith("<?xml")
+        || (text.trimStart().startsWith("<") && !text.trimStart().startsWith("<!")); // not HTML doctype
 
-    if (isXml) {
-      result = this.parseLegacyXml<T>(text);
-    } else {
-      try {
-        result = this.normaliseLegacyJson<T>(JSON.parse(text));
-      } catch {
-        // Last resort: maybe it's XML without proper content-type
-        if (text.includes("<") && text.includes(">")) {
-          result = this.parseLegacyXml<T>(text);
-        } else {
-          throw new OpenXEApiError(
-            0,
-            response.status,
-            `Legacy API ${action}: unparseable response — ${text.substring(0, 120)}`
-          );
+      if (isXml) {
+        result = this.parseLegacyXml<T>(text);
+      } else {
+        try {
+          result = this.normaliseLegacyJson<T>(JSON.parse(text));
+        } catch {
+          // Last resort: maybe it's XML without proper content-type
+          if (text.includes("<") && text.includes(">")) {
+            result = this.parseLegacyXml<T>(text);
+          } else {
+            throw new OpenXEApiError(
+              0,
+              response.status,
+              `Legacy API ${action}: unparseable response — ${text.substring(0, 120)}`
+            );
+          }
         }
       }
-    }
 
-    if (!result.success) {
-      throw new OpenXEApiError(
-        0,
-        400,
-        result.error ?? `Legacy API ${action} failed`
-      );
-    }
+      if (!result.success) {
+        throw new OpenXEApiError(
+          0,
+          400,
+          result.error ?? `Legacy API ${action} failed`
+        );
+      }
 
-    return result;
+      return result;
+    });
   }
 
   /**
@@ -361,6 +392,63 @@ export class OpenXEClient {
       data: (Object.keys(record).length > 0 ? record : payloadXml.trim()) as unknown as T,
       error: success ? undefined : (msgMatch?.[1]?.trim() ?? "Unknown XML error"),
     };
+  }
+
+  /** Apache-HTML-403/404 bei aktiver Auto-Detection = Pfad-Problem. */
+  private isPathProblem(err: unknown): err is UnparseableBodyError {
+    return (
+      err instanceof UnparseableBodyError &&
+      err.bodyKind === "html" &&
+      (err.httpCode === 403 || err.httpCode === 404) &&
+      this.config.apiPath === null
+    );
+  }
+
+  /**
+   * Runs a request against the resolved API base. If the request fails
+   * with an Apache-blocked-path signature, the path is re-detected and
+   * the request retried exactly once. Errors from the retry propagate
+   * unchanged (loop guard).
+   */
+  private async withSelfHealing<T>(run: (base: string) => Promise<T>): Promise<T> {
+    const base = await this.apiBase();
+    try {
+      return await run(base);
+    } catch (err) {
+      if (!this.isPathProblem(err)) throw err;
+
+      const oldPath = this.resolvedApiPath;
+      this.resolvedApiPath = null;
+      this.detectionPromise = null;
+
+      let newBase: string;
+      try {
+        newBase = await this.apiBase();
+      } catch {
+        this.resolvedApiPath = oldPath; // restore: detection found nothing better
+        throw new OpenXEApiError(
+          7499,
+          err.httpCode,
+          `${err.message}\nAPI path re-detection found no working alternative ` +
+            `(tried: ${API_PATH_CANDIDATES.join(", ")}). The previously working path may have ` +
+            `been blocked server-side (.htaccess / vhost config).`
+        );
+      }
+
+      if (newBase === base) {
+        throw new OpenXEApiError(
+          7499,
+          err.httpCode,
+          `${err.message}\nAPI path re-detection returned the same path — the server is ` +
+            `blocking this specific request path.`
+        );
+      }
+
+      console.error(
+        `[openxe-mcp] API path changed server-side — switched from ${oldPath} and retrying once.`
+      );
+      return await run(newBase);
+    }
   }
 
   private buildUrl(
@@ -482,15 +570,26 @@ export class OpenXEClient {
   }
 
   private async handleErrorResponse(response: Response): Promise<never> {
+    let text = "";
+    try {
+      text = await response.text();
+    } catch {
+      // body not readable
+    }
+
     let errorBody: any;
     try {
-      errorBody = await response.json();
+      errorBody = JSON.parse(text);
     } catch {
-      throw new OpenXEApiError(
-        7499,
-        response.status,
-        `HTTP ${response.status} with unparseable body`
-      );
+      const trimmed = text.trim();
+      const kind: "html" | "empty" | "unknown" =
+        trimmed.startsWith("<") ? "html" : trimmed === "" ? "empty" : "unknown";
+      const message =
+        kind === "html"
+          ? `HTTP ${response.status} with non-JSON body — the web server returned an HTML error page ` +
+            `instead of an API response (request likely blocked before reaching OpenXE).`
+          : `HTTP ${response.status} with unparseable body`;
+      throw new UnparseableBodyError(response.status, kind, message);
     }
 
     if (errorBody?.error) {

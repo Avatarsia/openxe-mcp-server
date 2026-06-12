@@ -32,6 +32,7 @@ function mock404() {
   mockFetch.mockResolvedValueOnce({
     status: 404,
     headers: new Map(),
+    text: async () => JSON.stringify({ error: { code: 7452, http_code: 404, message: "Not found" } }),
     json: async () => ({
       error: { code: 7452, http_code: 404, message: "Not found" },
     }),

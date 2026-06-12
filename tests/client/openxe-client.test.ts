@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   OpenXEClient,
   EndpointNotAvailableError,
+  OpenXEApiError,
 } from "../../src/client/openxe-client.js";
 import type { OpenXEConfig } from "../../src/config.js";
 
@@ -296,6 +297,13 @@ describe("OpenXEClient", () => {
       mockFetch.mockResolvedValueOnce({
         status: 500,
         headers: new Map(),
+        text: async () => JSON.stringify({
+          error: {
+            code: 7499,
+            http_code: 500,
+            message: "Internal Server Error",
+          },
+        }),
         json: async () => ({
           error: {
             code: 7499,
@@ -325,6 +333,7 @@ describe("OpenXEClient", () => {
       mockFetch.mockResolvedValueOnce({
         status: 404,
         headers: new Map(),
+        text: async () => JSON.stringify({ error: { code: 7452, http_code: 404, message: "Not found" } }),
         json: async () => ({
           error: {
             code: 7452,
@@ -352,6 +361,7 @@ describe("OpenXEClient", () => {
       mockFetch.mockResolvedValueOnce({
         status: 404,
         headers: new Map(),
+        text: async () => JSON.stringify({ error: { code: 7452, http_code: 404, message: "Resource not found", href: "/api/v1/adressen/99999" } }),
         json: async () => ({
           error: {
             code: 7452,
@@ -384,6 +394,7 @@ describe("OpenXEClient", () => {
       mockFetch.mockResolvedValueOnce({
         status: 404,
         headers: new Map(),
+        text: async () => JSON.stringify({ error: { code: 7452, http_code: 404, message: "Not found" } }),
         json: async () => ({
           error: { code: 7452, http_code: 404, message: "Not found" },
         }),
@@ -496,5 +507,98 @@ describe("API path auto-detection", () => {
     });
     const result = await client.get("/v1/adressen");
     expect(result.data).toEqual([]);
+  });
+});
+
+describe("self-healing on Apache-blocked paths", () => {
+  const autoConfig: OpenXEConfig = {
+    baseUrl: "https://erp.test",
+    apiPath: null,
+    username: "testuser",
+    password: "testpass",
+    timeout: 5000,
+  };
+
+  const digestChallenge = () => ({
+    status: 401,
+    headers: new Map([
+      ["www-authenticate", 'Digest realm="Xentral-API", qop="auth", nonce="n1", opaque="o1"'],
+    ]),
+    text: async () => "",
+  });
+
+  const apacheForbidden = () => ({
+    status: 403,
+    headers: new Map(),
+    text: async () => "<html><body><h1>Forbidden</h1></body></html>",
+  });
+
+  beforeEach(() => mockFetch.mockReset());
+
+  it("re-detects and retries once when the cached path gets blocked", async () => {
+    const client = new OpenXEClient(autoConfig, mockFetch as any);
+    mockFetch.mockResolvedValueOnce(digestChallenge()); // probe /api/index.php -> hit
+    mockFetch.mockResolvedValueOnce(digestChallenge()); // request handshake
+    mockFetch.mockResolvedValueOnce({ status: 200, headers: new Map(), json: async () => [] });
+    await client.get("/v1/adressen");
+
+    // Server re-configured: /api/index.php now blocked, /www/api/index.php active
+    mockFetch.mockResolvedValueOnce(apacheForbidden()); // request -> 403 HTML
+    mockFetch.mockResolvedValueOnce(apacheForbidden()); // re-detection probe 1 -> blocked
+    mockFetch.mockResolvedValueOnce(digestChallenge()); // re-detection probe 2 -> hit
+    mockFetch.mockResolvedValueOnce({ status: 200, headers: new Map(), json: async () => [{ id: 7 }] }); // retry (nonce cached)
+
+    const result = await client.get("/v1/adressen");
+    expect(result.data).toEqual([{ id: 7 }]);
+    const lastUrl = String(mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0]);
+    expect(lastUrl).toContain("/www/api/index.php/");
+  });
+
+  it("throws enriched error when re-detection finds the same path", async () => {
+    const client = new OpenXEClient(autoConfig, mockFetch as any);
+    mockFetch.mockResolvedValueOnce(digestChallenge()); // detection: candidate 1 hit
+    mockFetch.mockResolvedValueOnce(apacheForbidden()); // request -> 403 HTML
+    mockFetch.mockResolvedValueOnce(digestChallenge()); // re-detection: candidate 1 hit again
+
+    const err = await client.get("/v1/adressen").catch((e) => e);
+    expect(err.message).toContain("re-detection returned the same path");
+  });
+
+  it("throws enriched error when re-detection fails entirely", async () => {
+    const client = new OpenXEClient(autoConfig, mockFetch as any);
+    mockFetch.mockResolvedValueOnce(digestChallenge()); // detection: candidate 1 hit
+    mockFetch.mockResolvedValueOnce(apacheForbidden()); // request -> 403 HTML
+    mockFetch.mockResolvedValueOnce(apacheForbidden()); // re-detection probe 1
+    mockFetch.mockResolvedValueOnce(apacheForbidden()); // re-detection probe 2
+    mockFetch.mockResolvedValueOnce(apacheForbidden()); // re-detection probe 3
+
+    const err = await client.get("/v1/adressen").catch((e) => e);
+    expect(err.message).toContain("no working alternative");
+    expect(err.message).toContain(".htaccess");
+  });
+
+  it("does NOT re-detect on a real permission 403 with JSON body", async () => {
+    const client = new OpenXEClient(autoConfig, mockFetch as any);
+    mockFetch.mockResolvedValueOnce(digestChallenge()); // detection
+    mockFetch.mockResolvedValueOnce({
+      status: 403,
+      headers: new Map([["content-type", "application/json"]]),
+      text: async () => JSON.stringify({ error: { code: 403, message: "No permission for module" } }),
+      json: async () => ({ error: { code: 403, message: "No permission for module" } }),
+    });
+
+    const err = await client.get("/v1/adressen").catch((e) => e);
+    expect(err.message).toContain("No permission for module");
+    expect(mockFetch).toHaveBeenCalledTimes(2); // NO re-detection probes
+  });
+
+  it("does NOT self-heal when apiPath is explicit", async () => {
+    const fixedConfig: OpenXEConfig = { ...autoConfig, apiPath: "/api/index.php" };
+    const client = new OpenXEClient(fixedConfig, mockFetch as any);
+    mockFetch.mockResolvedValueOnce(apacheForbidden());
+
+    const err = await client.get("/v1/adressen").catch((e) => e);
+    expect(err.message).toContain("HTML error page");
+    expect(mockFetch).toHaveBeenCalledTimes(1); // no probes
   });
 });
