@@ -231,11 +231,19 @@ Im `full`-Modus wird derselbe Aufruf direkt als Tool `openxe-list-invoices` mit 
 
 | Variable | Default | Beschreibung |
 |---|---|---|
-| `OPENXE_API_PATH` | `/api/index.php` | API-Endpunkt-Pfad (nur aendern wenn noetig) |
+| `OPENXE_API_PATH` | auto | API-Pfad (Standard: automatische Erkennung, siehe unten) |
 | `OPENXE_TIMEOUT` | `30000` | Request-Timeout in Millisekunden |
 | `OPENXE_MODE` | `router` | `router` (2 Tools, wenig Tokens), `full` (alle einzeln), `readonly` (nur Lesen) |
 | `OPENXE_ALLOW_HTTP` | - | Auf `1` setzen um die HTTP-Warnung im LAN zu unterdruecken |
 | `OPENXE_AUDIT_LOG` | - | Auf `1` setzen fuer Audit-Logging aller Tool-Aufrufe |
+
+#### Automatische API-Pfad-Erkennung
+
+Wenn `OPENXE_API_PATH` nicht gesetzt ist, erkennt der Server den API-Pfad beim Start automatisch. Geprueft werden der Reihe nach: `/api/index.php` (DocumentRoot = `www/`), `/www/api/index.php` (DocumentRoot = OpenXE-Repo-Root gemaess offizieller INSTALL.md) und `/api` (Rewrite-Rule-Setups). Als Treffer gilt HTTP 401 mit Digest-Challenge oder HTTP 200 mit JSON-Antwort auf `GET <kandidat>/v1/adressen?limit=1`.
+
+- **Eager + lazy:** Erkennung laeuft beim Start (Fehler wird nur auf stderr geloggt, der Server startet trotzdem) und bei der ersten Anfrage erneut, wenn der Start-Probe fehlschlug.
+- **Self-healing:** Liefert ein Endpunkt spaeter einen Apache-HTML-Fehler (403/404), erkennt der Server den Pfad einmalig neu und wiederholt die Anfrage genau einmal.
+- **Manuell ueberschreiben:** `OPENXE_API_PATH=/api/index.php` deaktiviert Erkennung und Self-healing vollstaendig. Leerer Wert gilt als nicht gesetzt.
 
 ### Sicherheits-Variablen (nur fuer Netzwerk-Betrieb mit `--http`)
 
