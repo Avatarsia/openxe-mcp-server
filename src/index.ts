@@ -135,6 +135,7 @@ function buildInstructions(mode: "router" | "full" | "readonly"): string {
 async function main() {
   const config = loadConfig();
   const client = new OpenXEClient(config);
+  client.startApiPathDetection();
 
   const server = new Server(
     {
