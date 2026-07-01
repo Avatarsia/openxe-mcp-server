@@ -20,9 +20,25 @@ const AggregateSchema = z
 
 // --- Where schema (shared by all list tools) ---
 
-const whereSchema = z.record(z.string(), z.record(z.string(), z.any())).optional().describe(
-  'Client-seitige Filter. Beispiele: {plz: {startsWith: "2"}}, {email: {empty: true}}, {name: {contains: "Mueller"}}'
-);
+// Skalare Kurzform tolerieren: {land: "DE"} wird zu {land: {equals: "DE"}}
+// normalisiert, bevor validiert wird. Lokale LLMs schicken haeufig den
+// Wert direkt statt der {operator: value}-Objektform.
+const coerceWhereShape = (val: unknown): unknown => {
+  if (val === null || typeof val !== "object" || Array.isArray(val)) return val;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+    out[k] = v !== null && typeof v === "object" && !Array.isArray(v) ? v : { equals: v };
+  }
+  return out;
+};
+
+const whereSchema = z
+  .preprocess(coerceWhereShape, z.record(z.string(), z.record(z.string(), z.any())))
+  .optional()
+  .describe(
+    'Client-seitige Filter. Beispiele: {plz: {startsWith: "2"}}, {email: {empty: true}}, {name: {contains: "Mueller"}}. ' +
+    'Kurzform {feld: "wert"} wird als {feld: {equals: "wert"}} interpretiert.'
+  );
 
 // --- Input Schemas ---
 

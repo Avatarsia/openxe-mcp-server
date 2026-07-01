@@ -80,12 +80,12 @@ const PositionInput = z.object({
   nummer: z
     .union([z.number().int(), z.string()])
     .describe("Article number (Artikelnummer) or article ID"),
-  menge: z.number().positive().describe("Quantity"),
-  preis: z.number().optional().describe("Unit price (overrides default)"),
+  menge: z.coerce.number().positive().describe("Quantity"),
+  preis: z.coerce.number().optional().describe("Unit price (overrides default)"),
 });
 
 export const OrderCreateInput = z.object({
-  adresse: z.number().int().positive().describe("Customer address ID"),
+  adresse: z.coerce.number().int().positive().describe("Customer address ID"),
   datum: z.string().optional().describe("Order date (YYYY-MM-DD)"),
   projekt: z.string().optional().describe("Project reference"),
   positionen: z
@@ -102,14 +102,14 @@ export const OrderCreateInput = z.object({
 });
 
 export const QuoteCreateInput = z.object({
-  adresse: z.number().int().positive().describe("Customer address ID"),
+  adresse: z.coerce.number().int().positive().describe("Customer address ID"),
   datum: z.string().optional().describe("Quote date (YYYY-MM-DD)"),
   positionen: z
     .array(
       z.object({
         nummer: z.union([z.number().int(), z.string()]).describe("Article number or ID"),
-        menge: z.number().positive().describe("Quantity"),
-        preis: z.number().optional().describe("Unit price override"),
+        menge: z.coerce.number().positive().describe("Quantity"),
+        preis: z.coerce.number().optional().describe("Unit price override"),
       })
     )
     .min(1),
@@ -122,14 +122,14 @@ export const QuoteCreateInput = z.object({
 });
 
 export const InvoiceCreateInput = z.object({
-  adresse: z.number().int().positive().describe("Customer address ID"),
+  adresse: z.coerce.number().int().positive().describe("Customer address ID"),
   datum: z.string().optional().describe("Invoice date (YYYY-MM-DD)"),
   positionen: z
     .array(
       z.object({
         nummer: z.union([z.number().int(), z.string()]).describe("Article number or ID"),
-        menge: z.number().positive().describe("Quantity"),
-        preis: z.number().describe("Unit price"),
+        menge: z.coerce.number().positive().describe("Quantity"),
+        preis: z.coerce.number().describe("Unit price"),
       })
     )
     .min(1),
@@ -141,41 +141,41 @@ export const InvoiceCreateInput = z.object({
 });
 
 export const DeliveryNoteCreateInput = z.object({
-  adresse: z.number().int().positive().describe("Customer address ID"),
-  auftragid: z.number().int().optional().describe("Source order ID"),
+  adresse: z.coerce.number().int().positive().describe("Customer address ID"),
+  auftragid: z.coerce.number().int().optional().describe("Source order ID"),
   positionen: z
     .array(
       z.object({
         nummer: z.union([z.number().int(), z.string()]).describe("Article number or ID"),
-        menge: z.number().positive().describe("Quantity"),
+        menge: z.coerce.number().positive().describe("Quantity"),
       })
     )
     .min(1),
 });
 
 export const CreditNoteCreateInput = z.object({
-  adresse: z.number().int().positive().describe("Customer address ID"),
-  rechnungid: z.number().int().optional().describe("Source invoice ID"),
+  adresse: z.coerce.number().int().positive().describe("Customer address ID"),
+  rechnungid: z.coerce.number().int().optional().describe("Source invoice ID"),
   positionen: z
     .array(
       z.object({
         nummer: z.union([z.number().int(), z.string()]).describe("Article number or ID"),
-        menge: z.number().positive().describe("Quantity"),
-        preis: z.number().describe("Unit price"),
+        menge: z.coerce.number().positive().describe("Quantity"),
+        preis: z.coerce.number().describe("Unit price"),
       })
     )
     .min(1),
 });
 
 export const DocumentIdInput = z.object({
-  id: z.number().int().positive().describe("Document ID"),
+  id: z.coerce.number().int().positive().describe("Document ID"),
 });
 
 export const BelegPDFInput = z.object({
   typ: z
     .enum(["angebot", "auftrag", "rechnung", "lieferschein", "gutschrift", "bestellung"])
     .describe("Document type"),
-  id: z.number().int().positive().describe("Document ID"),
+  id: z.coerce.number().int().positive().describe("Document ID"),
 });
 
 // Purchase Order schemas

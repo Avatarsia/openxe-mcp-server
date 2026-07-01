@@ -20,9 +20,24 @@ const AggregateSchema = z
 
 // --- Where schema ---
 
-const whereSchema = z.record(z.string(), z.record(z.string(), z.any())).optional().describe(
-  'Client-seitige Filter. Beispiele: {plz: {startsWith: "2"}}, {email: {empty: true}}, {name: {contains: "Mueller"}}'
-);
+// Skalare Kurzform tolerieren: {feld: "wert"} wird zu {feld: {equals: "wert"}}
+// normalisiert, bevor validiert wird (analog read-tools.ts).
+const coerceWhereShape = (val: unknown): unknown => {
+  if (val === null || typeof val !== "object" || Array.isArray(val)) return val;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+    out[k] = v !== null && typeof v === "object" && !Array.isArray(v) ? v : { equals: v };
+  }
+  return out;
+};
+
+const whereSchema = z
+  .preprocess(coerceWhereShape, z.record(z.string(), z.record(z.string(), z.any())))
+  .optional()
+  .describe(
+    'Client-seitige Filter. Beispiele: {plz: {startsWith: "2"}}, {email: {empty: true}}, {name: {contains: "Mueller"}}. ' +
+    'Kurzform {feld: "wert"} wird als {feld: {equals: "wert"}} interpretiert.'
+  );
 
 // --- Shared schemas ---
 

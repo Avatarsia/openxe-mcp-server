@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { OpenXEClient } from "../client/openxe-client.js";
+import { OpenXEClient, OpenXEApiError } from "../client/openxe-client.js";
 import {
   OrderCreateInput,
   QuoteCreateInput,
@@ -241,6 +241,143 @@ const SCHEMA_MAP: Record<string, z.ZodSchema> = {
   "openxe-edit-credit-memo": EditCreditMemoInput,
 };
 
+// ---------------------------------------------------------------------------
+// Idempotency guard + post-create verification (OpenXE issue #18)
+//
+// OpenXE's ApiBelegCreate persists the document row BEFORE the follow-up steps
+// and runs without a DB transaction. If a later step throws, the API returns
+// 7499 "Unexpected error" but the document already exists (orphan). A client
+// that treats 7499 as a plain failure and retries creates one extra document
+// per attempt (observed: 10 quotes from a single logical action).
+//
+// Two client-side mitigations, since we cannot patch the server here:
+//   1. Idempotency cache: an identical create within IDEM_TTL_MS returns the
+//      first result instead of creating a duplicate.
+//   2. Post-error verification: on ANY OpenXEApiError from a create, we check
+//      whether the document actually landed and return a DEFINITIVE outcome
+//      that never invites a blind retry.
+// ---------------------------------------------------------------------------
+
+const IDEM_TTL_MS = 120_000;
+
+interface CacheEntry {
+  ts: number;
+  result: ToolResult;
+}
+
+const createCache = new Map<string, CacheEntry>();
+
+/** Stable-ish key for a create intent (fixed field order — no sorting needed). */
+function buildIdemKey(toolName: string, data: Record<string, unknown>): string {
+  return (
+    toolName +
+    "|" +
+    JSON.stringify({
+      adresse: data.adresse,
+      kundennummer: data.kundennummer,
+      rechnungid: data.rechnungid,
+      auftragid: data.auftragid,
+      artikelliste: data.artikelliste,
+    })
+  );
+}
+
+function getCachedCreate(key: string): ToolResult | null {
+  const e = createCache.get(key);
+  if (!e) return null;
+  if (Date.now() - e.ts > IDEM_TTL_MS) {
+    createCache.delete(key);
+    return null;
+  }
+  return e.result;
+}
+
+function putCachedCreate(key: string, result: ToolResult): void {
+  createCache.set(key, { ts: Date.now(), result });
+}
+
+/** Reset the idempotency cache — used by tests. */
+export function resetIdempotencyCache(): void {
+  createCache.clear();
+}
+
+/** Append an extra text note to a (cached) result without mutating the original. */
+function withNote(result: ToolResult, note: string): ToolResult {
+  return {
+    ...result,
+    content: [...result.content, { type: "text" as const, text: note }],
+  };
+}
+
+/** REST v1 belege sub-path + list-action label per create tool, for verification. */
+const CREATE_VERIFY: Record<string, { path: string; listAction: string }> = {
+  "openxe-create-order": { path: "auftraege", listAction: "list-orders" },
+  "openxe-create-quote": { path: "angebote", listAction: "list-quotes" },
+  "openxe-create-invoice": { path: "rechnungen", listAction: "list-invoices" },
+  "openxe-create-credit-note": { path: "gutschriften", listAction: "list-credit-memos" },
+};
+
+const VERIFY_WINDOW_MS = 5 * 60_000;
+
+/** Parse OpenXE "YYYY-MM-DD HH:MM:SS" (or date only) to epoch ms; null if unparseable. */
+function parseOpenXETs(s: unknown): number | null {
+  if (typeof s !== "string" || s.trim() === "" || s.startsWith("0000")) return null;
+  const ms = Date.parse(s.replace(" ", "T"));
+  return Number.isNaN(ms) ? null : ms;
+}
+
+type VerifyOutcome =
+  | { status: "created"; id: string; belegnr: string; count: number }
+  | { status: "none" }
+  | { status: "unknown" };
+
+/**
+ * After a create error, check whether a document for this kundennummer was
+ * created within the last VERIFY_WINDOW_MS. Best-effort: any lookup failure
+ * degrades to "unknown" (caller then warns instead of asserting).
+ */
+async function verifyBelegCreated(
+  client: OpenXEClient,
+  toolName: string,
+  kundennummer: string
+): Promise<VerifyOutcome> {
+  const cfg = CREATE_VERIFY[toolName];
+  if (!cfg || !kundennummer) return { status: "unknown" };
+  try {
+    const resp = await client.get<any>(`/v1/belege/${cfg.path}`, { kundennummer });
+    const raw = resp.data;
+    const list: any[] = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.data)
+        ? raw.data
+        : [];
+    const now = Date.now();
+    const recent = list
+      .filter((r) => String(r?.kundennummer ?? "") === String(kundennummer))
+      .map((r) => ({
+        r,
+        ts: parseOpenXETs(
+          r?.created_at ?? r?.updated_at ?? (r?.datum ? `${r.datum} ${r?.zeit ?? "00:00:00"}` : "")
+        ),
+      }))
+      .filter((x) => x.ts !== null && now - (x.ts as number) <= VERIFY_WINDOW_MS)
+      .sort((a, b) => Number(b.r.id) - Number(a.r.id) || (b.ts as number) - (a.ts as number));
+
+    if (recent.length > 0) {
+      const b = recent[0].r;
+      return {
+        status: "created",
+        id: String(b.id),
+        belegnr: String(b.belegnr ?? ""),
+        count: recent.length,
+      };
+    }
+    return { status: "none" };
+  } catch {
+    return { status: "unknown" };
+  }
+}
+
 export async function handleDocumentTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -348,9 +485,93 @@ export async function handleDocumentTool(
       ? { [wrapperKey]: data }
       : data;
 
-  const result = await client.legacyPost(action, payload);
+  const isCreate = CREATE_TOOLS_WITH_POSITIONS.has(toolName);
 
-  return {
-    content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-  };
+  // Non-create tools: pass through unchanged.
+  if (!isCreate) {
+    const result = await client.legacyPost(action, payload);
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
+
+  // --- Create path (idempotency + post-error verification, issue #18) ---
+  const idemKey = buildIdemKey(toolName, data);
+  const cached = getCachedCreate(idemKey);
+  if (cached) {
+    return withNote(
+      cached,
+      `Idempotenz: identischer ${toolName} wurde in den letzten ${IDEM_TTL_MS / 1000}s bereits ausgefuehrt — es wurde KEIN neuer Beleg angelegt.`
+    );
+  }
+
+  const kn =
+    typeof data.kundennummer === "string"
+      ? data.kundennummer
+      : String(data.kundennummer ?? "");
+
+  try {
+    const result = await client.legacyPost(action, payload);
+    const ok: ToolResult = {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    };
+    putCachedCreate(idemKey, ok);
+    return ok;
+  } catch (err) {
+    // Network / non-API errors: not our concern here.
+    if (!(err instanceof OpenXEApiError)) throw err;
+
+    const cfg = CREATE_VERIFY[toolName];
+    const outcome = await verifyBelegCreated(client, toolName, kn);
+
+    if (outcome.status === "created") {
+      const dupWarn =
+        outcome.count > 1
+          ? ` ACHTUNG: ${outcome.count} kuerzlich fuer diese Kundennummer angelegte Belege gefunden — moegliche Duplikate, bitte pruefen.`
+          : "";
+      const res: ToolResult = {
+        content: [
+          {
+            type: "text",
+            text:
+              `⚠ Beleg wurde TROTZ Server-Fehler ${err.code} ("${err.message}") angelegt: ` +
+              `belegnr ${outcome.belegnr} (id ${outcome.id}).${dupWarn} ` +
+              `NICHT erneut versuchen — der Fehler ist ein bekannter OpenXE-Bug ` +
+              `(github.com/Avatarsia/OpenXE/issues/18), der Beleg existiert.`,
+          },
+        ],
+      };
+      // Cache so an immediate identical retry is deduped instead of duplicating.
+      putCachedCreate(idemKey, res);
+      return res;
+    }
+
+    if (outcome.status === "none") {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text:
+              `create fehlgeschlagen (OpenXE ${err.code}: "${err.message}") und KEIN Beleg fuer ` +
+              `kundennummer ${kn} gefunden. Ursache serverseitig — pruefe die Kunden-Pflichtfelder ` +
+              `(z.B. Steuer/USt-Konfiguration). NICHT identisch wiederholen (Duplikat-Risiko, Bug #18).`,
+          },
+        ],
+      };
+    }
+
+    // status === "unknown": could not verify — must not invite a blind retry.
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text:
+            `create meldete Fehler (OpenXE ${err.code}: "${err.message}") und der Beleg-Status ` +
+            `konnte NICHT verifiziert werden. MOEGLICHERWEISE wurde trotzdem ein Beleg angelegt. ` +
+            `Erst per ${cfg?.listAction ?? "list-*"} (kundennummer=${kn}) pruefen, dann gezielt ` +
+            `fortfahren — NICHT blind wiederholen (Bug #18).`,
+        },
+      ],
+    };
+  }
 }

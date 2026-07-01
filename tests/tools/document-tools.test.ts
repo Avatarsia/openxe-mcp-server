@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   handleDocumentTool,
   DOCUMENT_TOOL_DEFINITIONS,
+  resetIdempotencyCache,
 } from "../../src/tools/document-tools.js";
-import { OpenXEClient } from "../../src/client/openxe-client.js";
+import { OpenXEClient, OpenXEApiError } from "../../src/client/openxe-client.js";
 
 describe("Document Tools", () => {
   let mockClient: {
@@ -14,6 +15,7 @@ describe("Document Tools", () => {
   };
 
   beforeEach(() => {
+    resetIdempotencyCache();
     mockClient = {
       legacyPost: vi.fn(),
       delete: vi.fn(),
@@ -237,5 +239,152 @@ describe("Document Tools", () => {
     expect(parsed.filename).toBe("angebot-1.pdf");
     expect(parsed.content_type).toBe("application/pdf");
     expect(parsed.size_bytes).toBe(fakePdf.length);
+  });
+
+  // --- Fix 1: type coercion (string -> number) ---
+
+  it("coerces string adresse/menge/preis on create-quote", async () => {
+    mockClient.get.mockResolvedValue({
+      data: { data: { id: "2773", kundennummer: "12610", name: "Fuel" } },
+    });
+    mockClient.legacyPost.mockResolvedValue({
+      success: true,
+      data: { id: 500, belegnr: "AN-2026-0001" },
+    });
+
+    const result = await handleDocumentTool(
+      "openxe-create-quote",
+      {
+        adresse: "2773",
+        positionen: [{ nummer: "100039", menge: "2", preis: "28.00" }],
+      },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(mockClient.get).toHaveBeenCalledWith("/v1/adressen/2773");
+    expect(mockClient.legacyPost).toHaveBeenCalledWith("AngebotCreate", {
+      adresse: 2773,
+      kundennummer: "12610",
+      artikelliste: { position: [{ nummer: "100039", menge: 2, preis: 28 }] },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain("AN-2026-0001");
+  });
+
+  // --- Fix 2: idempotency guard ---
+
+  it("dedupes an identical create-quote within the TTL (no second legacyPost)", async () => {
+    mockClient.get.mockResolvedValue({
+      data: { data: { id: "42", kundennummer: "K42", name: "T" } },
+    });
+    mockClient.legacyPost.mockResolvedValue({
+      success: true,
+      data: { id: 1, belegnr: "AN-1" },
+    });
+
+    const args = {
+      adresse: 42,
+      positionen: [{ nummer: 10, menge: 1, preis: 5 }],
+    };
+    const first = await handleDocumentTool(
+      "openxe-create-quote",
+      { ...args },
+      mockClient as unknown as OpenXEClient
+    );
+    const second = await handleDocumentTool(
+      "openxe-create-quote",
+      { ...args },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(mockClient.legacyPost).toHaveBeenCalledTimes(1);
+    expect(first.content[0].text).toContain("AN-1");
+    expect(second.content[0].text).toContain("AN-1");
+    expect(second.content.some((c) => c.text.includes("Idempotenz"))).toBe(true);
+  });
+
+  // --- Fix 3: post-error verification on OpenXE 7499 ---
+
+  it("reports the orphan document when 7499 fired but the beleg exists", async () => {
+    // created_at must fall inside VERIFY_WINDOW_MS relative to Date.now().
+    // Build a LOCAL wall-clock string (OpenXE stores local time; parseOpenXETs
+    // parses without a TZ suffix, i.e. as local) — a UTC toISOString() would be
+    // off by the timezone offset and fall outside the window.
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const nowTs = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    // address resolve, then verification list lookup
+    mockClient.get
+      .mockResolvedValueOnce({
+        data: { data: { id: "2773", kundennummer: "12610", name: "Fuel" } },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: [
+            {
+              id: "343",
+              belegnr: "AN-2026-0343",
+              kundennummer: "12610",
+              created_at: nowTs,
+            },
+          ],
+        },
+      });
+    mockClient.legacyPost.mockRejectedValue(
+      new OpenXEApiError(7499, 400, "Unexpected error")
+    );
+
+    const result = await handleDocumentTool(
+      "openxe-create-quote",
+      { adresse: 2773, positionen: [{ nummer: 100039, menge: 2, preis: 28 }] },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain("TROTZ Server-Fehler");
+    expect(result.content[0].text).toContain("AN-2026-0343");
+    expect(result.content[0].text).toContain("NICHT erneut");
+  });
+
+  it("returns a no-retry error when 7499 fired and no beleg was found", async () => {
+    mockClient.get
+      .mockResolvedValueOnce({
+        data: { data: { id: "2773", kundennummer: "12610", name: "Fuel" } },
+      })
+      .mockResolvedValueOnce({ data: { data: [] } });
+    mockClient.legacyPost.mockRejectedValue(
+      new OpenXEApiError(7499, 400, "Unexpected error")
+    );
+
+    const result = await handleDocumentTool(
+      "openxe-create-quote",
+      { adresse: 2773, positionen: [{ nummer: 100039, menge: 1, preis: 5 }] },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("KEIN Beleg");
+    expect(result.content[0].text).toContain("NICHT identisch wiederholen");
+  });
+
+  it("warns (unknown) when verification itself fails after 7499", async () => {
+    mockClient.get
+      .mockResolvedValueOnce({
+        data: { data: { id: "2773", kundennummer: "12610", name: "Fuel" } },
+      })
+      .mockRejectedValueOnce(new Error("endpoint down"));
+    mockClient.legacyPost.mockRejectedValue(
+      new OpenXEApiError(7499, 400, "Unexpected error")
+    );
+
+    const result = await handleDocumentTool(
+      "openxe-create-quote",
+      { adresse: 2773, positionen: [{ nummer: 100039, menge: 1, preis: 5 }] },
+      mockClient as unknown as OpenXEClient
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("NICHT verifiziert");
+    expect(result.content[0].text).toContain("list-quotes");
   });
 });
