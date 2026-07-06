@@ -3,7 +3,7 @@
 ## Stack
 - TypeScript, Node.js, MCP SDK
 - Zod fuer Config-Validierung
-- Vitest fuer Tests (531 passed, 17 skipped)
+- Vitest fuer Tests (565 passed, 17 skipped)
 - Git: github.com/Avatarsia/openxe-mcp-server, Branch `master`
 
 ## Konfiguration
@@ -22,6 +22,13 @@
 - `npm run build` nach jeder Aenderung an src/
 - `npx vitest run` fuer Tests
 - `npm start` zum Starten (liest .env automatisch)
+
+## Beleg-Erstellung (Robustheit — create-order/quote/invoice/credit-note)
+- **Input-Coercion**: `adresse`, `menge`, `preis` und Beleg-IDs sind `z.coerce.number()` — String-Eingaben (`"2773"`, `"28.00"`) werden akzeptiert und gecastet. Lokale LLMs schicken Zahlen oft als String.
+- **`where`-Kurzform**: `{feld: "wert"}` wird zu `{feld: {equals: "wert"}}` normalisiert (read-tools + document-read-tools).
+- **Idempotenz-Guard**: identischer create-Aufruf (Key aus adresse+kundennummer+artikelliste) innerhalb 120s gibt den Cache-Treffer zurueck, KEIN zweiter Beleg. Reset via `resetIdempotencyCache()` (Tests).
+- **Post-Error-Verify (OpenXE Issue #18)**: OpenXE 7499 ist ein False Negative — der Beleg wird VOR dem Fehler persistiert (keine Transaktion). Nach jedem `OpenXEApiError` auf create wird verifiziert (`GET /v1/belege/{path}` nach kundennummer + 5-Min-Fenster) und ein definitives Outcome zurueckgegeben (created/none/unknown) — NIE ein plain-retryable Fehler. Verhindert die Duplikat-Kaskade.
+- Server-Fix (Transaktion + Trace-Log) ist als OpenXE-Issue #18 dokumentiert, NICHT im MCP behebbar.
 
 ## Wichtige Regeln
 - Keine Credentials in Code oder Skill-Dateien hardcoden
