@@ -9,6 +9,14 @@ import {
   buildArticlePayload,
 } from "../../src/tools/article-tools.js";
 
+/** Fake REST reads: list by nummer returns one article with the requested nummer; detail returns the given sales prices. */
+const fakeReads = (prices: unknown[] = [], matches = 1) =>
+  vi.fn(async (path: string, params?: Record<string, unknown>) =>
+    path === "/v1/artikel"
+      ? { data: { data: Array.from({ length: matches }, (_, i) => ({ id: String(100 + i), nummer: params?.nummer })) } }
+      : { data: { data: { verkaufspreise: prices } } }
+  );
+
 describe("Article Tools", () => {
   let mockClient: { legacyPost: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
 
@@ -26,7 +34,7 @@ describe("Article Tools", () => {
   };
 
   beforeEach(() => {
-    mockClient = { legacyPost: vi.fn(), post: vi.fn(), put: vi.fn() };
+    mockClient = { legacyPost: vi.fn(), post: vi.fn(), put: vi.fn(), get: fakeReads() };
   });
 
   it("defines the create-article tool", () => {
@@ -140,7 +148,7 @@ describe("Article update and purchase price tools", () => {
   let mockClient: { legacyPost: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
-    mockClient = { legacyPost: vi.fn().mockResolvedValue({ success: true, data: {} }) };
+    mockClient = { legacyPost: vi.fn().mockResolvedValue({ success: true, data: {} }), get: fakeReads() };
   });
 
   const client = () => mockClient as unknown as OpenXEClient;
@@ -515,11 +523,11 @@ describe("Article update and purchase price tools", () => {
     expect(sent.einkaufspreise.staffelpreis.preis).toBe("0");
   });
 
-  it("dry-run warns that sales prices are expired by the OpenXE call", async () => {
+  it("dry-run says that current sales prices are read and sent back", async () => {
     const upd = await handleArticleTool("openxe-update-article", { nummer: "1K102", ean: "123" }, client());
-    expect(upd.content[0].text).toContain("Verkaufspreise");
+    expect(upd.content[0].text).toContain("Sales prices not passed");
     const price = await handleArticleTool("openxe-add-article-purchase-price", { nummer: "1K102", einkaufspreis: pp() }, client());
-    expect(price.content[0].text).toContain("Verkaufspreise");
+    expect(price.content[0].text).toContain("Sales prices not passed");
     expect(mockClient.legacyPost).not.toHaveBeenCalled();
   });
 
@@ -604,7 +612,7 @@ describe("openxe-update-article JSON schema", () => {
 describe("openxe-delete-article-purchase-price", () => {
   let mockClient: { legacyPost: ReturnType<typeof vi.fn> };
   beforeEach(() => {
-    mockClient = { legacyPost: vi.fn().mockResolvedValue({ success: true, data: { anzahl: "1" } }) };
+    mockClient = { legacyPost: vi.fn().mockResolvedValue({ success: true, data: { anzahl: "1" } }), get: fakeReads() };
   });
   const client = () => mockClient as unknown as OpenXEClient;
 
@@ -667,7 +675,7 @@ describe("openxe-delete-article-purchase-price", () => {
 describe("zolltarifnummer (HS code) on article tools", () => {
   let mockClient: { legacyPost: ReturnType<typeof vi.fn> };
   beforeEach(() => {
-    mockClient = { legacyPost: vi.fn().mockResolvedValue({ success: true }) };
+    mockClient = { legacyPost: vi.fn().mockResolvedValue({ success: true }), get: fakeReads() };
   });
   const client = () => mockClient as unknown as OpenXEClient;
 
@@ -705,7 +713,7 @@ describe("zolltarifnummer (HS code) on article tools", () => {
 describe("openxe-delete-article", () => {
   let mockClient: { legacyPost: ReturnType<typeof vi.fn> };
   beforeEach(() => {
-    mockClient = { legacyPost: vi.fn().mockResolvedValue({ success: true }) };
+    mockClient = { legacyPost: vi.fn().mockResolvedValue({ success: true }), get: fakeReads() };
   });
   const client = () => mockClient as unknown as OpenXEClient;
 
@@ -738,7 +746,7 @@ describe("openxe-delete-article", () => {
 describe("openxe-update-article rename (neue_nummer)", () => {
   let mockClient: { legacyPost: ReturnType<typeof vi.fn> };
   beforeEach(() => {
-    mockClient = { legacyPost: vi.fn().mockResolvedValue({ success: true }) };
+    mockClient = { legacyPost: vi.fn().mockResolvedValue({ success: true }), get: fakeReads() };
   });
   const client = () => mockClient as unknown as OpenXEClient;
 
@@ -787,7 +795,7 @@ describe("openxe-update-article rename (neue_nummer)", () => {
 describe("sales prices (verkaufspreise) carried by article writes", () => {
   let mockClient: { legacyPost: ReturnType<typeof vi.fn> };
   beforeEach(() => {
-    mockClient = { legacyPost: vi.fn().mockResolvedValue({ success: true }) };
+    mockClient = { legacyPost: vi.fn().mockResolvedValue({ success: true }), get: fakeReads() };
   });
   const client = () => mockClient as unknown as OpenXEClient;
 
@@ -842,5 +850,67 @@ describe("sales prices (verkaufspreise) carried by article writes", () => {
       handleArticleTool("openxe-update-article", { nummer: "1K102", verkaufspreise: [{ ab_menge: 1, preis: 1, waehrung: "CHFX" }], confirm: true }, client())
     ).rejects.toBeInstanceOf(ZodError);
     expect(mockClient.legacyPost).not.toHaveBeenCalled();
+  });
+});
+
+describe("sales prices are kept when verkaufspreise is omitted", () => {
+  const priced = [{ id: 35, preis: "12.50000000", waehrung: "CHF", ab_menge: "1.0000", vpe: "1" }];
+
+  it("update sends the current sales prices back in the same ArtikelEdit call", async () => {
+    const client = { legacyPost: vi.fn().mockResolvedValue({ success: true }), get: fakeReads(priced) };
+    await handleArticleTool("openxe-update-article", { nummer: "1K102", ean: "123", confirm: true }, client as unknown as OpenXEClient);
+    expect(client.get).toHaveBeenCalledWith("/v1/artikel", { nummer: "1K102" });
+    expect(client.get).toHaveBeenCalledWith("/v1/artikel/100", { include: "verkaufspreise" });
+    expect(client.legacyPost).toHaveBeenCalledWith(
+      "ArtikelEdit",
+      expect.objectContaining({ nummer: "1K102", verkaufspreise: { staffelpreis: { ab_menge: "1", preis: "12.5", waehrung: "CHF" } } })
+    );
+  });
+
+  it("update keeps several sales prices as a list", async () => {
+    const two = [...priced, { preis: "9", waehrung: "CHF", ab_menge: "10.0000" }];
+    const client = { legacyPost: vi.fn().mockResolvedValue({ success: true }), get: fakeReads(two) };
+    await handleArticleTool("openxe-update-article", { nummer: "1K102", ean: "1", confirm: true }, client as unknown as OpenXEClient);
+    const sent = client.legacyPost.mock.calls[0][1] as { verkaufspreise: { staffelpreis: unknown[] } };
+    expect(sent.verkaufspreise.staffelpreis).toHaveLength(2);
+  });
+
+  it("explicit verkaufspreise is sent as given and no read happens", async () => {
+    const client = { legacyPost: vi.fn().mockResolvedValue({ success: true }), get: fakeReads(priced) };
+    await handleArticleTool(
+      "openxe-update-article",
+      { nummer: "1K102", ean: "1", verkaufspreise: [{ ab_menge: 1, preis: 20, waehrung: "CHF" }], confirm: true },
+      client as unknown as OpenXEClient
+    );
+    expect(client.get).not.toHaveBeenCalled();
+    const sent = client.legacyPost.mock.calls[0][1] as { verkaufspreise: { staffelpreis: { preis: string } } };
+    expect(sent.verkaufspreise.staffelpreis.preis).toBe("20");
+  });
+
+  it("refuses the update when nummer matches no article, and writes nothing", async () => {
+    const client = { legacyPost: vi.fn(), get: fakeReads(priced, 0) };
+    await expect(
+      handleArticleTool("openxe-update-article", { nummer: "1K102", ean: "1", confirm: true }, client as unknown as OpenXEClient)
+    ).rejects.toThrow(/need exactly 1/);
+    expect(client.legacyPost).not.toHaveBeenCalled();
+  });
+
+  it("refuses when nummer matches two articles", async () => {
+    const client = { legacyPost: vi.fn(), get: fakeReads(priced, 2) };
+    await expect(
+      handleArticleTool("openxe-add-article-purchase-price", { nummer: "1K102", einkaufspreis: { preis: 1, waehrung: "CHF", lieferantname: "X", bestellnummer: "B", bezeichnunglieferant: "Y" }, confirm: true }, client as unknown as OpenXEClient)
+    ).rejects.toThrow(/need exactly 1/);
+    expect(client.legacyPost).not.toHaveBeenCalled();
+  });
+
+  it("purchase price keeps the current sales prices too", async () => {
+    const client = { legacyPost: vi.fn().mockResolvedValue({ success: true }), get: fakeReads(priced) };
+    await handleArticleTool(
+      "openxe-add-article-purchase-price",
+      { nummer: "1K102", einkaufspreis: { preis: 1, waehrung: "CHF", lieferantname: "X", bestellnummer: "B", bezeichnunglieferant: "Y" }, confirm: true },
+      client as unknown as OpenXEClient
+    );
+    const sent = client.legacyPost.mock.calls[0][1] as { verkaufspreise?: unknown };
+    expect(sent.verkaufspreise).toEqual({ staffelpreis: { ab_menge: "1", preis: "12.5", waehrung: "CHF" } });
   });
 });

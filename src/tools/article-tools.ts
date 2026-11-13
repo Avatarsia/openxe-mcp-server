@@ -254,7 +254,7 @@ const ArticleUpdateBase = z.object({
     .describe("Country of origin, ISO 3166-1 alpha-2 (e.g. CH)"),
   lagerartikel: z.boolean().optional().describe("Stocked item (true) or not (false)"),
   verkaufspreise: SalesPricesInput.optional().describe(
-    "Sales prices to keep on the article. Send them with every write, because OpenXE expires sales prices that are not sent in the same call."
+    "Sales prices to keep on the article. If omitted, the current ones are read from OpenXE and sent back, so they are kept."
   ),
   // Acknowledgement flag: the rename only works on the patched test install. Without it, neue_nummer is refused.
   patched_api_rename: z
@@ -295,7 +295,7 @@ export const ArticlePurchasePriceInput = z.object({
     ),
   }),
   verkaufspreise: SalesPricesInput.optional().describe(
-    "Sales prices to keep. This call expires sales prices that are not sent, so send the ones to keep."
+    "Sales prices to keep. If omitted, the current ones are read and sent back, so they are kept."
   ),
 });
 
@@ -335,7 +335,7 @@ export const ARTICLE_TOOL_DEFINITIONS: ToolDefinition[] = [
       "Change fields of an existing article, identified by nummer. Uses the Legacy API action ArtikelEdit (REST v1 has no article PUT in OpenXE 1.13). " +
       "Only the fields you pass are changed; at least one field besides nummer is required. The server looks up nummer without excluding deleted articles, so make sure the article is live before changing it. Empty strings are rejected (they would clear the stored value). " +
       "neue_nummer renames the article: it is found by nummer (sent as URL parameter) and the new number is written from the body. It is refused unless patched_api_rename: true is also sent, because this rename depends on the patched api.php of the test install only; stock OpenXE and production would edit the article that already has the new number. " +
-      "Side effect: the OpenXE call also expires the article's sales prices (Verkaufspreise) that are not sent in the same call, even when you change only text fields. " +
+      "Sales prices: if verkaufspreise is omitted, the current sales prices are read from OpenXE (the nummer must match exactly one article, else the call fails) and sent back in the same call, so they are kept (an unchanged price keeps its row and its fields). " +
       "Text must not contain ' \" \\ or control characters (OpenXE does not escape them); rephrase, or use a typographic apostrophe (U+2019), which changes the stored text. " +
       "Without confirm: true the call only returns a dry-run preview and writes nothing. " +
       "To set a purchase price use openxe-add-article-purchase-price.",
@@ -386,7 +386,7 @@ export const ARTICLE_TOOL_DEFINITIONS: ToolDefinition[] = [
       "Needs the OpenXE fix for nested sections. lieferantname, bestellnummer and bezeichnunglieferant are required. " +
       "Every call writes bestellnummer and bezeichnunglieferant for the given supplier and quantity. " +
       "If the price differs from the current one, the current price is invalidated and the new one is inserted. If it is the same, the price itself changes nothing, but the supplier article number is still overwritten with the value you pass. " +
-      "Other purchase prices (Einkaufspreise) are kept. Sales prices (Verkaufspreise) that are not sent are expired by the OpenXE call, as with openxe-update-article. The supplier is looked up by lieferantennummer, then by lieferantname; only if neither matches is a new supplier created. The name lookup does not check the supplier role, so a customer with the same name can match, and an existing match does not get the lieferantennummer. " +
+      "Other purchase prices (Einkaufspreise) are kept. Sales prices (Verkaufspreise) are read and sent back when verkaufspreise is omitted, as with openxe-update-article. The supplier is looked up by lieferantennummer, then by lieferantname; only if neither matches is a new supplier created. The name lookup does not check the supplier role, so a customer with the same name can match, and an existing match does not get the lieferantennummer. " +
       "Retrying with a different price creates another version each time, so check the current price first (openxe-get-article with includeEinkaufspreise). " +
       "Without confirm: true the call only returns a dry-run preview and writes nothing.",
     inputSchema: zodToJsonSchema(
@@ -500,6 +500,43 @@ function writeResult(result: unknown): ToolResult {
   return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
 }
 
+/**
+ * Reads the article's current sales prices (REST GET /v1/artikel?nummer, then
+ * GET /v1/artikel/{id}?include=verkaufspreise). OpenXE expires every sales price
+ * that an ArtikelEdit call does not send, so callers send these back. Fails
+ * unless exactly one article matches the nummer.
+ */
+async function currentSalesPrices(
+  client: OpenXEClient,
+  nummer: string
+): Promise<z.infer<typeof SalesPricesInput>> {
+  const list = await client.get("/v1/artikel", { nummer });
+  const rows = listRows(list.data);
+  const matches = rows.filter((r) => String(r.nummer ?? "") === nummer);
+  if (matches.length !== 1) {
+    throw new Error(
+      `Cannot keep the sales prices of "${nummer}": ${matches.length} articles match, need exactly 1. Nothing was written.`
+    );
+  }
+  const one = await client.get(`/v1/artikel/${String(matches[0].id)}`, { include: "verkaufspreise" });
+  const article = (one.data as { data?: Record<string, unknown> } | undefined)?.data ?? one.data ?? {};
+  const prices = Array.isArray((article as Record<string, unknown>).verkaufspreise)
+    ? ((article as Record<string, unknown>).verkaufspreise as Array<Record<string, unknown>>)
+    : [];
+  return prices.map((p) => ({
+    ab_menge: Number(p.ab_menge),
+    preis: Number(p.preis),
+    waehrung: String(p.waehrung),
+  }));
+}
+
+/** REST list responses wrap the rows in data, sometimes twice. */
+function listRows(data: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(data)) return data as Array<Record<string, unknown>>;
+  const inner = (data as { data?: unknown } | undefined)?.data;
+  return Array.isArray(inner) ? (inner as Array<Record<string, unknown>>) : [];
+}
+
 export async function handleArticleTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -526,13 +563,18 @@ export async function handleArticleTool(
     case "openxe-update-article": {
       const input = ArticleUpdateInput.parse(raw);
       const payload = buildArticleUpdatePayload(input);
+      // Without verkaufspreise, send the current sales prices back so OpenXE does not expire them.
+      if (input.verkaufspreise === undefined) {
+        const current = await currentSalesPrices(client, input.nummer.trim());
+        if (current.length) payload.verkaufspreise = buildSalesPricePayload(current);
+      }
       // Rename: OpenXE finds the article by the URL parameter nummer and writes the new nummer from the body.
       const query = input.neue_nummer !== undefined ? { nummer: input.nummer.trim() } : undefined;
       if (input.neue_nummer !== undefined) payload.nummer = input.neue_nummer.trim();
       if (!confirm) {
         return dryRunResult(
           "Legacy API ArtikelEdit (no REST route for article PUT in OpenXE 1.13)" + (query ? ", rename via URL lookup" : ""),
-          "Nothing was changed. Repeat the call with confirm: true to change this article. Warning: the OpenXE call also expires sales prices (Verkaufspreise) of this article that are not sent, even for text-only changes.",
+          "Nothing was changed. Repeat the call with confirm: true to change this article. Sales prices not passed in verkaufspreise are read from OpenXE and sent back unchanged in this call (an unchanged price keeps its row and its vpe, nichtberechnet and other fields; verified on the test install).",
           { ...payload, ...(query ? { lookup_query: query } : {}) }
         );
       }
@@ -542,10 +584,14 @@ export async function handleArticleTool(
     case "openxe-add-article-purchase-price": {
       const input = ArticlePurchasePriceInput.parse(raw);
       const payload = buildArticlePurchasePricePayload(input);
+      if (input.verkaufspreise === undefined) {
+        const current = await currentSalesPrices(client, input.nummer.trim());
+        if (current.length) payload.verkaufspreise = buildSalesPricePayload(current);
+      }
       if (!confirm) {
         return dryRunResult(
           "Legacy API ArtikelEdit with nested einkaufspreise (needs the OpenXE nested-section fix)",
-          "Nothing was written. Repeat the call with confirm: true to set this purchase price. For the same supplier, quantity and currency, a different price invalidates the current one and adds a new version. The same price changes nothing except bestellnummer and bezeichnunglieferant, which are overwritten. Warning: the OpenXE call also expires sales prices (Verkaufspreise) of this article that are not sent.",
+          "Nothing was written. Repeat the call with confirm: true to set this purchase price. For the same supplier, quantity and currency, a different price invalidates the current one and adds a new version. The same price changes nothing except bestellnummer and bezeichnunglieferant, which are overwritten. Sales prices not passed in verkaufspreise are read from OpenXE and sent back unchanged in this call (an unchanged price keeps its row and its vpe, nichtberechnet and other fields; verified on the test install).",
           payload
         );
       }

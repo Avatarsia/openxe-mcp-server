@@ -75,12 +75,12 @@ output: {success: bool, data: {id: int}}
 permissions: ["standard_artikelcreate"]
 
 ### tool: openxe-update-article
-description: Change fields of an existing article via Legacy API ArtikelEdit, identified by nummer. Dry-run unless confirm: true. Empty strings are rejected. Side effect: sales prices (Verkaufspreise) not sent in the call are expired by OpenXE.
+description: Change fields of an existing article via Legacy API ArtikelEdit, identified by nummer. Dry-run unless confirm: true. Empty strings are rejected. Sales prices: if verkaufspreise is omitted, the current prices are read (nummer must match exactly one article) and sent back, so they are kept. An unchanged price keeps its row and its fields (vpe, nichtberechnet, validity dates), verified on the test install.
 endpoint: POST /api/ArtikelEdit
 input: {nummer: string, name_de?, artikelkategorie?, standardlieferant?: int, hersteller?, herstellernummer?, ean?, zolltarifnummer?, herkunftsland?: 2-letter ISO, lagerartikel?: bool, neue_nummer?: string, patched_api_rename?: bool (must be true with neue_nummer), verkaufspreise?: [{ab_menge, preis, waehrung}], confirm?: bool}
 output: {success: bool}
 permissions: ["standard_artikeledit"]
-notes: neue_nummer renames the article (refused unless patched_api_rename: true; must differ from nummer): ArtikelEdit is called with URL parameter nummer (lookup) and the new number in the body. This URL lookup needs the patched api.php of the test install; stock OpenXE and production do not support it. verkaufspreise: send all sales prices to keep, OpenXE expires the rest.
+notes: neue_nummer renames the article (refused unless patched_api_rename: true; must differ from nummer): ArtikelEdit is called with URL parameter nummer (lookup) and the new number in the body. This URL lookup needs the patched api.php of the test install; stock OpenXE and production do not support it. verkaufspreise: send all sales prices to keep. Omitted: the current ones are read and sent back, as described in the description.
 
 ### tool: openxe-delete-article
 description: Soft-delete an article by nummer via Legacy API ArtikelEdit with geloescht=1. Dry-run unless confirm: true. Sales prices are expired; purchase prices stay (remove them first with openxe-delete-article-purchase-price if needed).
@@ -90,7 +90,7 @@ output: {success: bool}
 permissions: ["standard_artikeledit"]
 
 ### tool: openxe-add-article-purchase-price
-description: Set a purchase price on an existing article via Legacy API ArtikelEdit with nested einkaufspreise. Dry-run unless confirm: true. lieferantname, bestellnummer and bezeichnunglieferant are required, waehrung is required. Same supplier, quantity and currency with a different price versions the old price; the same price overwrites bestellnummer and bezeichnunglieferant. Side effect: unsent sales prices are expired.
+description: Set a purchase price on an existing article via Legacy API ArtikelEdit with nested einkaufspreise. Dry-run unless confirm: true. lieferantname, bestellnummer and bezeichnunglieferant are required, waehrung is required. Same supplier, quantity and currency with a different price versions the old price; the same price overwrites bestellnummer and bezeichnunglieferant. Sales prices: if verkaufspreise is omitted, the current ones are read and sent back, so they are kept (same as openxe-update-article).
 endpoint: POST /api/ArtikelEdit
 input: {nummer: string, einkaufspreis: {preis, waehrung, ab_menge?, lieferantname, bestellnummer, bezeichnunglieferant, lieferantennummer?}, confirm?: bool}
 output: {success: bool}
