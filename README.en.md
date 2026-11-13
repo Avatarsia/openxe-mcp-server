@@ -50,7 +50,7 @@ The server reads its config from environment variables:
 | `MCP_AUTH_TOKEN` | No | - | Bearer token for HTTP transport |
 | `MCP_HTTP_HOST` | No | `127.0.0.1` | Bind address for HTTP transport |
 | `MCP_ALLOWED_ORIGINS` | No | - | Comma-separated allowed origins for HTTP transport (DNS rebinding protection) |
-| `OPENXE_AUDIT_LOG` | No | - | Set to `1` to enable audit logging of all tool calls to stderr |
+| `OPENXE_AUDIT_LOG` | No | on | Audit logging of all tool calls to stderr is on by default. Set to `0` to disable |
 
 ## Usage with Claude Desktop
 
@@ -161,7 +161,7 @@ In the default mode (stdio), the MCP server runs as a subprocess of your AI assi
 | `MCP_AUTH_TOKEN` | - | Bearer token for HTTP transport (only relevant with `--http`) |
 | `MCP_HTTP_HOST` | `127.0.0.1` | Bind address for HTTP transport (default: localhost only) |
 | `MCP_ALLOWED_ORIGINS` | - | Comma-separated allowed origins for HTTP transport (DNS rebinding protection) |
-| `OPENXE_AUDIT_LOG` | - | Set to `1` to enable audit logging of all tool calls to stderr |
+| `OPENXE_AUDIT_LOG` | on | Set to `0` to disable audit logging of all tool calls to stderr |
 
 ### Read-Only Mode
 
@@ -186,7 +186,7 @@ MCP_AUTH_TOKEN=my-secret-token npx -y github:Avatarsia/openxe-mcp-server -- --ht
 ### Audit Logging
 
 ```bash
-OPENXE_AUDIT_LOG=1 npx -y github:Avatarsia/openxe-mcp-server
+npx -y github:Avatarsia/openxe-mcp-server
 ```
 
 Logs every tool call with timestamp and parameters to stderr. Sensitive fields (IBAN, PayPal, password) are automatically redacted as `[REDACTED]`.

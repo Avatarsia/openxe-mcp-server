@@ -81,10 +81,10 @@ import {
 } from "./tools/report-tools.js";
 
 // ---------------------------------------------------------------------------
-// Audit logging (opt-in via OPENXE_AUDIT_LOG=1)
+// Audit logging (on by default; disable explicitly with OPENXE_AUDIT_LOG=0)
 // ---------------------------------------------------------------------------
 function auditLog(toolName: string, args: Record<string, unknown>): void {
-  if (!process.env.OPENXE_AUDIT_LOG) return;
+  if (process.env.OPENXE_AUDIT_LOG === "0") return;
   const timestamp = new Date().toISOString();
   // Redact sensitive fields
   const safeArgs = { ...args };
