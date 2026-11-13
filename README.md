@@ -93,7 +93,7 @@ Ab Version 0.3+. Oeffne **Settings > MCP** und fuege folgendes ein:
 | `OPENXE_ALLOW_HTTP` | `1` | Unterdrueckt die Sicherheitswarnung bei HTTP-Verbindungen. Im lokalen Netzwerk (LAN) ist HTTP in Ordnung -- die Warnung ist fuer Internetverbindungen gedacht, wo HTTPS Pflicht waere. |
 | `OPENXE_MODE` | `router` | Steuert, wie viele Tools das LLM sieht. `router` (Standard) zeigt nur 2 kompakte Tools -- ideal fuer lokale Modelle mit begrenztem Kontextfenster. `full` zeigt alle 69 Tools einzeln. `readonly` erlaubt nur Lesen (kein Erstellen/Bearbeiten/Loeschen). |
 | `OPENXE_TIMEOUT` | `30000` | Wie lange der Server maximal auf eine Antwort von OpenXE wartet (in Millisekunden). 30000 = 30 Sekunden. Bei langsamen Servern oder grossen Abfragen auf 60000 erhoehen. |
-| `OPENXE_AUDIT_LOG` | `1` | Protokolliert jeden einzelnen Tool-Aufruf (welches Tool, welche Parameter, wann). Nuetzlich zum Nachvollziehen, was das LLM gemacht hat. Sensible Daten (IBAN, PayPal, Passwoerter) werden dabei automatisch maskiert. Das Protokoll erscheint in der Konsole (stderr). |
+| `OPENXE_AUDIT_LOG` | `1` (Standard) | Protokolliert jeden einzelnen Tool-Aufruf (welches Tool, welche Parameter, wann). Nuetzlich zum Nachvollziehen, was das LLM gemacht hat. Sensible Daten (IBAN, PayPal, Passwoerter) werden dabei automatisch maskiert. Das Protokoll erscheint in der Konsole (stderr). |
 
 > **Tipp fuer lokale Modelle:** Verwende den `router`-Modus (Standard). Er reduziert den Token-Verbrauch von ~10.000 auf ~1.500 Tokens fuer die Tool-Definitionen -- das laesst mehr Platz fuer deine eigentliche Frage und die Antwort.
 
@@ -235,7 +235,7 @@ Im `full`-Modus wird derselbe Aufruf direkt als Tool `openxe-list-invoices` mit 
 | `OPENXE_TIMEOUT` | `30000` | Request-Timeout in Millisekunden |
 | `OPENXE_MODE` | `router` | `router` (2 Tools, wenig Tokens), `full` (alle einzeln), `readonly` (nur Lesen) |
 | `OPENXE_ALLOW_HTTP` | - | Auf `1` setzen um die HTTP-Warnung im LAN zu unterdruecken |
-| `OPENXE_AUDIT_LOG` | - | Auf `1` setzen fuer Audit-Logging aller Tool-Aufrufe |
+| `OPENXE_AUDIT_LOG` | an | Auf `0` setzen, um das Audit-Logging aller Tool-Aufrufe abzuschalten |
 
 #### Automatische API-Pfad-Erkennung
 

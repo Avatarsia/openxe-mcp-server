@@ -164,6 +164,52 @@ describe("OpenXEClient", () => {
       expect(secondCall[0]).toBe("https://erp.test/api/AdresseCreate");
     });
 
+    it("appends the query parameters to the URL, encoded, and leaves the body unchanged", async () => {
+      mockFetch.mockResolvedValueOnce({
+        status: 401,
+        headers: new Map([
+          [
+            "www-authenticate",
+            'Digest realm="Xentral-API", qop="auth", nonce="qnonce", opaque="qopaque"',
+          ],
+        ]),
+      });
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        headers: new Map(),
+        text: async () => JSON.stringify({ success: true }),
+        json: async () => ({ success: true }),
+      });
+
+      await client.legacyPost("ArtikelEdit", { nummer: "1F000" }, { nummer: "1F 000&x" });
+
+      const secondCall = mockFetch.mock.calls[1];
+      expect(secondCall[0]).toBe("https://erp.test/api/ArtikelEdit?nummer=1F+000%26x");
+      expect(secondCall[1].body).toBe(JSON.stringify({ data: { nummer: "1F000" } }));
+    });
+
+    it("sends no query string when the query is omitted or empty", async () => {
+      mockFetch.mockResolvedValueOnce({
+        status: 401,
+        headers: new Map([
+          [
+            "www-authenticate",
+            'Digest realm="Xentral-API", qop="auth", nonce="enonce", opaque="eopaque"',
+          ],
+        ]),
+      });
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        headers: new Map(),
+        text: async () => JSON.stringify({ success: true }),
+        json: async () => ({ success: true }),
+      });
+
+      await client.legacyPost("ArtikelEdit", { nummer: "1F000" }, {});
+
+      expect(mockFetch.mock.calls[1][0]).toBe("https://erp.test/api/ArtikelEdit");
+    });
+
     it("extracts nested xml data when response has status + xml (ZeiterfassungGet pattern)", async () => {
       // The real ZeiterfassungGet returns: {status:{messageCode:"1"}, xml:{zeiterfassungen:{zeiterfassung:[...]}}}
       const apiBody = {

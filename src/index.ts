@@ -33,6 +33,10 @@ import {
   handleAddressTool,
 } from "./tools/address-tools.js";
 import {
+  ARTICLE_TOOL_DEFINITIONS,
+  handleArticleTool,
+} from "./tools/article-tools.js";
+import {
   DOCUMENT_TOOL_DEFINITIONS,
   handleDocumentTool,
 } from "./tools/document-tools.js";
@@ -81,10 +85,10 @@ import {
 } from "./tools/report-tools.js";
 
 // ---------------------------------------------------------------------------
-// Audit logging (opt-in via OPENXE_AUDIT_LOG=1)
+// Audit logging (on by default; disable explicitly with OPENXE_AUDIT_LOG=0)
 // ---------------------------------------------------------------------------
 function auditLog(toolName: string, args: Record<string, unknown>): void {
-  if (!process.env.OPENXE_AUDIT_LOG) return;
+  if (process.env.OPENXE_AUDIT_LOG === "0") return;
   const timestamp = new Date().toISOString();
   // Redact sensitive fields
   const safeArgs = { ...args };
@@ -270,6 +274,7 @@ async function main() {
   // === List Tools ===
   const FULL_TOOLS = [
     ...ADDRESS_TOOL_DEFINITIONS,
+    ...ARTICLE_TOOL_DEFINITIONS,
     ...DOCUMENT_TOOL_DEFINITIONS,
     ...DOCUMENT_READ_TOOL_DEFINITIONS,
     ...SUBSCRIPTION_TOOL_DEFINITIONS,
@@ -314,6 +319,9 @@ async function main() {
   // === Call Tool ===
   const addressToolNames = new Set(
     ADDRESS_TOOL_DEFINITIONS.map((t) => t.name)
+  );
+  const articleToolNames = new Set(
+    ARTICLE_TOOL_DEFINITIONS.map((t) => t.name)
   );
   const documentToolNames = new Set(
     DOCUMENT_TOOL_DEFINITIONS.map((t) => t.name)
@@ -369,6 +377,9 @@ async function main() {
     // Full mode tools (also reachable internally via router)
     if (addressToolNames.has(name)) {
       return handleAddressTool(name, toolArgs, client) as Promise<ServerResult>;
+    }
+    if (articleToolNames.has(name)) {
+      return handleArticleTool(name, toolArgs, client) as Promise<ServerResult>;
     }
     if (documentReadToolNames.has(name)) {
       return handleDocumentReadTool(name, toolArgs, client) as Promise<ServerResult>;

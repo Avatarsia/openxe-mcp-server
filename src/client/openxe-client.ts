@@ -274,10 +274,12 @@ export class OpenXEClient {
    */
   async legacyPost<T = unknown>(
     action: string,
-    data: Record<string, unknown>
+    data: Record<string, unknown>,
+    query?: Record<string, string>
   ): Promise<LegacyResponse<T>> {
     return this.withSelfHealing(async (base) => {
-      const url = `${base}/${action}`;
+      const qs = query && Object.keys(query).length ? `?${new URLSearchParams(query).toString()}` : "";
+      const url = `${base}/${action}${qs}`;
       const response = await this.authenticatedRequest("POST", url, {
         data,
       });

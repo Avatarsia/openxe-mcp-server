@@ -283,21 +283,21 @@ describe("Router Tools", () => {
     });
 
     it("dispatches create-address to address handler", async () => {
-      mockClient.legacyPost.mockResolvedValue({
-        data: { id: 5, kundennummer: "10099" },
+      mockClient.post.mockResolvedValue({
+        data: { data: { id: 5, kundennummer: "10099" } },
       });
 
       const result = await handleRouter(
         {
           action: "create-address",
-          params: { typ: "kunde", name: "Neuer Kunde" },
+          params: { typ: "kunde", name: "Neuer Kunde", confirm: true },
         },
         mockClient as unknown as OpenXEClient
       );
 
       expect(result.isError).toBeUndefined();
-      expect(mockClient.legacyPost).toHaveBeenCalledWith(
-        "AdresseCreate",
+      expect(mockClient.post).toHaveBeenCalledWith(
+        "/v1/adressen",
         expect.objectContaining({ name: "Neuer Kunde" })
       );
     });
