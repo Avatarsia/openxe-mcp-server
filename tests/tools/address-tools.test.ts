@@ -39,7 +39,7 @@ describe("Address Tools", () => {
 
     const result = await handleAddressTool(
       "openxe-create-address",
-      { typ: "firma", name: "Acme GmbH", email: "info@acme.de" },
+      { typ: "firma", name: "Acme GmbH", email: "info@acme.de", confirm: true },
       mockClient as unknown as OpenXEClient
     );
 
@@ -52,28 +52,62 @@ describe("Address Tools", () => {
     expect(result.content[0].text).toContain("42");
   });
 
-  it("forces kundennummer/lieferantennummer to 'NEU' even if the caller supplies one", async () => {
-    // The ERP owns number assignment — any manual value from the LLM must
-    // be dropped to avoid duplicate-key conflicts and broken reporting.
-    mockClient.legacyPost.mockResolvedValue({ success: true, data: { id: 99 } });
-
-    await handleAddressTool(
+  it("returns a dry-run preview and does not write without confirm", async () => {
+    const result = await handleAddressTool(
       "openxe-create-address",
-      {
-        typ: "firma",
-        name: "Supplier AG",
-        rolle: "Lieferant",
-        kundennummer: "K-HIJACKED-12345",
-        lieferantennummer: "L-HIJACKED-999",
-      },
+      { typ: "firma", name: "Acme GmbH", iban: "DE89370400440532013000" },
       mockClient as unknown as OpenXEClient
     );
 
+    expect(mockClient.legacyPost).not.toHaveBeenCalled();
+    const text = result.content[0].text;
+    expect(text).toContain('"dry_run": true');
+    expect(text).toContain("[REDACTED]");
+    expect(text).not.toContain("DE89370400440532013000");
+  });
+
+  it("restores the street without the trailing space OpenXE adds", async () => {
+    mockClient.legacyPost.mockResolvedValue({ success: true, data: { id: 31 } });
+    mockClient.put = vi.fn().mockResolvedValue({ data: {} });
+
+    await handleAddressTool(
+      "openxe-create-address",
+      { typ: "firma", name: "Rubis Outils SA", strasse: "Via Lische 14", rolle: "Lieferant", confirm: true },
+      mockClient as unknown as OpenXEClient
+    );
+    expect(mockClient.put).toHaveBeenCalledWith("/v1/adressen/31", { strasse: "Via Lische 14" });
+  });
+
+  it("creates a pure supplier with NEU lieferantennummer and no kundennummer", async () => {
+    mockClient.legacyPost.mockResolvedValue({ success: true, data: { id: 9 } });
+
+    await handleAddressTool(
+      "openxe-create-address",
+      { typ: "firma", name: "Lief GmbH", rolle: "Lieferant", confirm: true },
+      mockClient as unknown as OpenXEClient
+    );
     const [, payload] = mockClient.legacyPost.mock.calls[0];
-    expect(payload.kundennummer).toBe("NEU");
     expect(payload.lieferantennummer).toBe("NEU");
-    // 'rolle' is stripped because it is a virtual field
-    expect(payload.rolle).toBeUndefined();
+    expect(payload.kundennummer).toBeUndefined();
+  });
+
+  it("passes an explicit kundennummer through and lets the ERP assign NEU", async () => {
+    mockClient.legacyPost.mockResolvedValue({ success: true, data: { id: 7 } });
+
+    await handleAddressTool(
+      "openxe-create-address",
+      { typ: "firma", name: "Kunde AG", kundennummer: "10001", confirm: true },
+      mockClient as unknown as OpenXEClient
+    );
+    expect(mockClient.legacyPost.mock.calls[0][1].kundennummer).toBe("10001");
+
+    mockClient.legacyPost.mockClear();
+    await handleAddressTool(
+      "openxe-create-address",
+      { typ: "firma", name: "Auto AG", confirm: true },
+      mockClient as unknown as OpenXEClient
+    );
+    expect(mockClient.legacyPost.mock.calls[0][1].kundennummer).toBe("NEU");
   });
 
   it("edits address via REST v1 PUT first", async () => {
@@ -83,7 +117,7 @@ describe("Address Tools", () => {
 
     const result = await handleAddressTool(
       "openxe-edit-address",
-      { id: 42, email: "new@acme.de" },
+      { id: 42, email: "new@acme.de", confirm: true },
       mockClient as unknown as OpenXEClient
     );
 
@@ -105,7 +139,7 @@ describe("Address Tools", () => {
 
     const result = await handleAddressTool(
       "openxe-edit-address",
-      { id: 42, email: "new@acme.de" },
+      { id: 42, email: "new@acme.de", confirm: true },
       mockClient as unknown as OpenXEClient
     );
 
@@ -158,10 +192,20 @@ describe("Address Tools", () => {
 
     const result = await handleAddressTool(
       "openxe-delete-delivery-address",
-      { id: 7 },
+      { id: 7, confirm: true },
       mockClient as unknown as OpenXEClient
     );
 
     expect(mockClient.delete).toHaveBeenCalledWith("/v1/lieferadressen/7");
+  });
+
+  it("does not edit or delete without confirm", async () => {
+    const edit = await handleAddressTool("openxe-edit-address", { id: 42, email: "x@acme.de" }, mockClient as unknown as OpenXEClient);
+    const del = await handleAddressTool("openxe-delete-delivery-address", { id: 7 }, mockClient as unknown as OpenXEClient);
+    expect(mockClient.put).not.toHaveBeenCalled();
+    expect(mockClient.legacyPost).not.toHaveBeenCalled();
+    expect(mockClient.delete).not.toHaveBeenCalled();
+    expect(edit.content[0].text).toContain("dry_run");
+    expect(del.content[0].text).toContain("dry_run");
   });
 });

@@ -290,7 +290,7 @@ describe("Router Tools", () => {
       const result = await handleRouter(
         {
           action: "create-address",
-          params: { typ: "kunde", name: "Neuer Kunde" },
+          params: { typ: "kunde", name: "Neuer Kunde", confirm: true },
         },
         mockClient as unknown as OpenXEClient
       );

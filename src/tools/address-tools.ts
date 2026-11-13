@@ -27,6 +27,35 @@ interface ToolResult {
 }
 
 // Normalize common LLM field name mistakes before Zod parsing
+/** Removes a number field from the input and returns it (empty values become undefined). */
+function takeNumber(raw: Record<string, any>, key: string): string | undefined {
+  const value = raw[key];
+  delete raw[key];
+  if (value === undefined || value === null || value === "") return undefined;
+  return String(value).trim();
+}
+
+/** Shared dry-run answer for write tools: nothing is sent unless confirm is true. */
+function dryRunResult(message: string, preview: Record<string, unknown>): ToolResult {
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({ dry_run: true, message, would_send: preview }, null, 2),
+      },
+    ],
+  };
+}
+
+/** Masks bank and payment fields in previews so they do not echo into the chat. */
+function redactSecrets(payload: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    out[key] = /iban|swift|bic|paypal|passwort|password|secret|token/i.test(key) ? "[REDACTED]" : value;
+  }
+  return out;
+}
+
 export function normalizeAddressFields(input: Record<string, any>): Record<string, any> {
   const normalized = { ...input };
 
@@ -139,14 +168,24 @@ export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
       "angebot_cc, auftrag_cc, rechnung_cc, gutschrift_cc, lieferschein_cc, bestellung_cc (CC emails). " +
       "Invoice delivery: rechnung_permail, rechnung_papier, rechnung_anzahlpapier. " +
       "Alt. invoice address: abweichende_rechnungsadresse, rechnung_name/strasse/plz/ort/land/ansprechpartner/email. EDI: gln.",
-    inputSchema: zodToJsonSchema(AddressCreateInput) as Record<string, unknown>,
+    inputSchema: zodToJsonSchema(
+      AddressCreateInput.extend({
+        kundennummer: z.string().optional().describe("Customer number. Omit or use \"NEU\" to let OpenXE assign the next number (this marks the address as Kunde). An explicit value is passed through."),
+        lieferantennummer: z.string().optional().describe("Supplier number. Omit or use \"NEU\" for automatic assignment (used with rolle Lieferant)."),
+        confirm: z.boolean().optional().describe("Must be true to create. Without it the call only returns a dry-run preview."),
+      })
+    ) as Record<string, unknown>,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: "openxe-edit-address",
     description:
       "Edit an existing address in OpenXE. Tries REST v1 PUT first, falls back to Legacy API if it fails. Required: id. All other address fields are optional.",
-    inputSchema: zodToJsonSchema(AddressEditInput) as Record<string, unknown>,
+    inputSchema: zodToJsonSchema(
+      AddressEditInput.extend({
+        confirm: z.boolean().optional().describe("Must be true to apply the change. Without it the call only returns a dry-run preview."),
+      })
+    ) as Record<string, unknown>,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
@@ -174,6 +213,7 @@ export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
     inputSchema: zodToJsonSchema(
       z.object({
         id: z.number().int().positive().describe("Delivery address ID"),
+        confirm: z.boolean().optional().describe("Must be true to delete. Without it the call only returns a dry-run preview."),
       })
     ) as Record<string, unknown>,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
@@ -187,26 +227,61 @@ export async function handleAddressTool(
 ): Promise<ToolResult> {
   switch (toolName) {
     case "openxe-create-address": {
-      const raw = args as Record<string, any>;
-      // Drop any kundennummer/lieferantennummer the caller may have smuggled
-      // in — the ERP must own number assignment. This is enforced at the
-      // handler (not just the schema) so it cannot be bypassed via catchall.
-      delete raw.kundennummer;
-      delete raw.lieferantennummer;
+      const raw = { ...(args as Record<string, any>) };
+      const confirm = raw.confirm === true;
+      delete raw.confirm;
+      // The ERP assigns customer and supplier numbers ("NEU" = automatic).
+      // An explicit number from the caller is passed through unchanged.
+      const explicitKundennummer = takeNumber(raw, "kundennummer");
+      const explicitLieferantennummer = takeNumber(raw, "lieferantennummer");
       const normalized = normalizeAddressFields(raw);
       const input = AddressCreateInput.parse(normalized);
       // Strip 'rolle' — it's a virtual/computed field, not a DB column. Sending it crashes the Legacy API (500).
       const { rolle, ...rest } = input;
-      const payload: Record<string, unknown> = {
-        ...rest,
-        // Always let the system assign the number. "NEU" is OpenXE's marker
-        // for auto-generate. Suppliers additionally need lieferantennummer.
-        kundennummer: "NEU",
-      };
-      if (rolle && /lieferant/i.test(rolle)) {
-        payload.lieferantennummer = "NEU";
+      // A kundennummer is what makes the address a Kunde in OpenXE.
+      // A pure supplier (rolle Lieferant) must not also become a Kunde.
+      const isSupplier = Boolean(rolle && /lieferant/i.test(rolle));
+      const payload: Record<string, unknown> = { ...rest };
+      if (explicitKundennummer) {
+        payload.kundennummer = explicitKundennummer;
+      } else if (!isSupplier) {
+        payload.kundennummer = "NEU";
       }
+      if (isSupplier) {
+        payload.lieferantennummer = explicitLieferantennummer ?? "NEU";
+      } else if (explicitLieferantennummer) {
+        payload.lieferantennummer = explicitLieferantennummer;
+      }
+
+      if (!confirm) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  dry_run: true,
+                  message: "Nothing was created. Repeat the call with confirm: true to create this address.",
+                  would_send: redactSecrets(payload),
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
       const result = await client.legacyPost("AdresseCreate", payload);
+      // OpenXE appends the (empty) house number to the street, leaving a
+      // trailing space. Restore the street exactly as the caller sent it.
+      const createdId = (result as any)?.data?.id;
+      if (createdId && typeof payload.strasse === "string") {
+        const cleanStreet = payload.strasse.trim();
+        if (cleanStreet) {
+          await client.put(`/v1/adressen/${createdId}`, { strasse: cleanStreet });
+        }
+      }
       return {
         content: [
           {
@@ -218,10 +293,19 @@ export async function handleAddressTool(
     }
 
     case "openxe-edit-address": {
-      const raw = args as Record<string, any>;
+      const raw = { ...(args as Record<string, any>) };
+      const confirm = raw.confirm === true;
+      delete raw.confirm;
       const normalized = normalizeAddressFields(raw);
       const input = AddressEditInput.parse(normalized);
       const { id, ...fields } = input;
+
+      if (!confirm) {
+        return dryRunResult(
+          `Nothing was changed. Repeat the call with confirm: true to edit address ${id}.`,
+          { id, changes: redactSecrets(fields as Record<string, unknown>) }
+        );
+      }
 
       // Try REST v1 PUT first (confirmed working via live testing)
       try {
@@ -320,9 +404,18 @@ export async function handleAddressTool(
     }
 
     case "openxe-delete-delivery-address": {
-      const { id } = z
-        .object({ id: z.number().int().positive() })
+      const { id, confirm } = z
+        .object({
+          id: z.number().int().positive(),
+          confirm: z.boolean().optional(),
+        })
         .parse(args);
+      if (confirm !== true) {
+        return dryRunResult(
+          `Nothing was deleted. Repeat the call with confirm: true to permanently delete delivery address ${id}.`,
+          { id, action: "delete" }
+        );
+      }
       await client.delete(`/v1/lieferadressen/${id}`);
       return {
         content: [
