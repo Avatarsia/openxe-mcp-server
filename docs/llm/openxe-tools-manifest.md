@@ -68,11 +68,33 @@ output: {success: bool}
 permissions: ["standard_adresseedit"]
 
 ### tool: openxe-create-article
-description: Create article via Legacy API (REST v1 is read-only)
+description: Create article via Legacy API ArtikelCreate (no REST route in OpenXE 1.13). Dry-run unless confirm: true. nummer is required and NEW/NEU are rejected. Free text rejects ' " \ and control characters. einkaufspreis needs lieferantname and bestellnummer. Categories: Handelsware or numeric id.
 endpoint: POST /api/ArtikelCreate
-input: {data: {name_de: string, nummer?: string, typ?: string, einheit?: string, [fields]: value}}
+input: {name_de: string, nummer: string, artikelkategorie: string, standardlieferant?: int, hersteller?, herstellernummer?, ean?, zolltarifnummer?, herkunftsland?: 2-letter ISO, lagerartikel?: bool, einkaufspreis?: {preis, waehrung, ab_menge?, lieferantname, bestellnummer, lieferantennummer?, bezeichnunglieferant?} (note: the key is einkaufspreis; a misspelled key is stripped by the schema without an error), confirm?: bool}
 output: {success: bool, data: {id: int}}
 permissions: ["standard_artikelcreate"]
+
+### tool: openxe-update-article
+description: Change fields of an existing article via Legacy API ArtikelEdit, identified by nummer. Dry-run unless confirm: true. Empty strings are rejected. Side effect: sales prices (Verkaufspreise) not sent in the call are expired by OpenXE.
+endpoint: POST /api/ArtikelEdit
+input: {nummer: string, name_de?, artikelkategorie?, standardlieferant?: int, hersteller?, herstellernummer?, ean?, zolltarifnummer?, herkunftsland?: 2-letter ISO, lagerartikel?: bool, neue_nummer?: string, verkaufspreise?: [{ab_menge, preis, waehrung}], confirm?: bool}
+output: {success: bool}
+permissions: ["standard_artikeledit"]
+notes: neue_nummer renames the article: ArtikelEdit is called with URL parameter nummer (lookup) and the new number in the body. This URL lookup needs the patched api.php of the test install; stock OpenXE and production do not support it. verkaufspreise: send all sales prices to keep, OpenXE expires the rest.
+
+### tool: openxe-delete-article
+description: Soft-delete an article by nummer via Legacy API ArtikelEdit with geloescht=1. Dry-run unless confirm: true. Sales prices are expired; purchase prices stay (remove them first with openxe-delete-article-purchase-price if needed).
+endpoint: POST /api/ArtikelEdit
+input: {nummer: string, confirm?: bool}
+output: {success: bool}
+permissions: ["standard_artikeledit"]
+
+### tool: openxe-add-article-purchase-price
+description: Set a purchase price on an existing article via Legacy API ArtikelEdit with nested einkaufspreise. Dry-run unless confirm: true. lieferantname, bestellnummer and bezeichnunglieferant are required, waehrung is required. Same supplier, quantity and currency with a different price versions the old price; the same price overwrites bestellnummer and bezeichnunglieferant. Side effect: unsent sales prices are expired.
+endpoint: POST /api/ArtikelEdit
+input: {nummer: string, einkaufspreis: {preis, waehrung, ab_menge?, lieferantname, bestellnummer, bezeichnunglieferant, lieferantennummer?}, confirm?: bool}
+output: {success: bool}
+permissions: ["standard_artikeledit"]
 
 ### tool: openxe-edit-article
 description: Edit article via Legacy API
@@ -338,3 +360,11 @@ permissions: ["view_report"]
 # Typical flow: Quote -> Order -> Invoice + Delivery Note
 # AngebotCreate -> AngebotFreigabe -> AngebotZuAuftrag -> AuftragFreigabe -> AuftragZuRechnung + LieferscheinCreate
 # Credit flow: RechnungGet -> WeiterfuehrenRechnungZuGutschrift -> GutschriftFreigabe
+
+### tool: openxe-delete-article-purchase-price
+
+- Removes the purchase prices of one supplier from one article (Legacy action `ArtikelEinkaufspreisDelete`).
+- Input: `nummer`, `lieferantennummer` (required), `bestellnummer` (optional narrowing). Dry-run unless `confirm: true`.
+- Effect: rows get `geloescht=1` and expire yesterday, like the delete button in the UI. Other suppliers are not touched.
+- Requires the test OpenXE install's added action `ApiArtikelEinkaufspreisDelete` (`www/pages/api.php`). Stock OpenXE 1.13 and production do not have it; the call fails there. The patch is not part of this repo.
+- `bestellnummer` is optional, but if given it must be non-empty (an empty value would widen the delete to all rows of the supplier).
