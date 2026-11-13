@@ -26,6 +26,46 @@ interface ToolResult {
   isError?: boolean;
 }
 
+/** Finds the record id in a REST response, whatever the client's wrapping depth. */
+function extractRecordId(res: any): number | undefined {
+  // OpenXE wraps the record in data.data (the client adds one more data level).
+  let current: any = res;
+  for (let depth = 0; depth < 4 && current; depth++) {
+    const id = Number(current?.id);
+    if (Number.isFinite(id) && id > 0) return id;
+    current = current?.data;
+  }
+  return undefined;
+}
+
+/**
+ * OpenXE's REST create for a supplier can answer 404 (error 7452) even though
+ * the row was written: the read-back looks up the supplier by kundennummer.
+ * We never retry the create (that would duplicate the address); instead we
+ * find the new row in the paginated address list by name and number.
+ */
+async function findCreatedAddressId(
+  client: OpenXEClient,
+  name: string,
+  numberField: "kundennummer" | "lieferantennummer",
+  number: string | undefined
+): Promise<number | undefined> {
+  for (let page = 1; page <= 200; page++) {
+    const res = (await client.get("/v1/adressen", { page: String(page), limit: "100" })) as any;
+    const rows: any[] = Array.isArray(res?.data?.data) ? res.data.data : Array.isArray(res?.data) ? res.data : [];
+    // number undefined = ERP-assigned ("NEU"): match on name and a non-empty number, newest id wins.
+    const match = rows
+      .filter((r) => String(r?.name ?? "") === name)
+      .filter((r) => (number === undefined ? String(r?.[numberField] ?? "") !== "" : String(r?.[numberField] ?? "") === number))
+      .map((r) => Number(r.id))
+      .filter((id) => Number.isFinite(id));
+    if (match.length > 0) return Math.max(...match);
+    const last = res?.pagination?.page_last;
+    if (rows.length === 0 || (typeof last === "number" && page >= last)) break;
+  }
+  return undefined;
+}
+
 // Normalize common LLM field name mistakes before Zod parsing
 /** Removes a number field from the input and returns it (empty values become undefined). */
 function takeNumber(raw: Record<string, any>, key: string): string | undefined {
@@ -156,7 +196,7 @@ export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-create-address",
     description:
-      "Create a new address (customer, supplier, employee) in OpenXE. Uses Legacy API because REST v1 POST is broken. " +
+      "Create a new address (customer, supplier, employee) in OpenXE via REST v1 (POST /v1/adressen). " +
       "The ERP always assigns kundennummer and lieferantennummer itself — do NOT pass these fields; any value is dropped. " +
       "Field names are auto-corrected (e.g. fax->telefax, website->internetseite, bic->swift, straße->strasse, nested bankverbindung->flat fields). " +
       "Required: typ, name. " +
@@ -180,7 +220,7 @@ export const ADDRESS_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "openxe-edit-address",
     description:
-      "Edit an existing address in OpenXE. Tries REST v1 PUT first, falls back to Legacy API if it fails. Required: id. All other address fields are optional.",
+      "Edit an existing address in OpenXE via REST v1 PUT (/v1/adressen/{id}). Required: id. All other address fields are optional.",
     inputSchema: zodToJsonSchema(
       AddressEditInput.extend({
         confirm: z.boolean().optional().describe("Must be true to apply the change. Without it the call only returns a dry-run preview."),
@@ -272,10 +312,32 @@ export async function handleAddressTool(
         };
       }
 
-      const result = await client.legacyPost("AdresseCreate", payload);
+      let createdId: number | undefined;
+      let note: string | undefined;
+      try {
+        const res = (await client.post("/v1/adressen", payload)) as any;
+        createdId = extractRecordId(res);
+      } catch (err) {
+        // Only the known read-back failure is handled; anything else is a real error.
+        const numberField = payload.lieferantennummer === "NEU" || explicitLieferantennummer
+          ? "lieferantennummer"
+          : "kundennummer";
+        const rawNumber = String(payload[numberField] ?? "");
+        const isReadBack404 = err instanceof OpenXEApiError && err.code === 7452;
+        if (!isReadBack404 || rawNumber === "" || typeof payload.name !== "string") {
+          throw err;
+        }
+        const number = rawNumber === "NEU" ? undefined : rawNumber;
+        createdId = await findCreatedAddressId(client, payload.name, numberField, number);
+        note = createdId
+          ? `REST create answered 404 (error 7452) after writing the row; found it in the address list as id ${createdId}.`
+          : `REST create answered 404 (error 7452); the row may exist but could not be located. Check the address list before retrying.`;
+        if (!createdId) {
+          throw new Error(note);
+        }
+      }
       // OpenXE appends the (empty) house number to the street, leaving a
       // trailing space. Restore the street exactly as the caller sent it.
-      const createdId = (result as any)?.data?.id;
       if (createdId && typeof payload.strasse === "string") {
         const cleanStreet = payload.strasse.trim();
         if (cleanStreet) {
@@ -286,7 +348,7 @@ export async function handleAddressTool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2),
+            text: JSON.stringify({ success: true, data: { id: createdId }, ...(note ? { note } : {}) }, null, 2),
           },
         ],
       };
@@ -326,67 +388,23 @@ export async function handleAddressTool(
           ],
         };
       } catch (err) {
-        const isHttpError =
-          err instanceof OpenXEApiError &&
-          [400, 404, 500].includes(err.httpCode);
-        if (!isHttpError) throw err;
-
-        // Fall back to Legacy API
-        const legacyResult = await client.legacyPost("AdresseEdit", {
-          adresse: input,
-        });
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  method: "Legacy API POST /api/AdresseEdit (fallback)",
-                  reason: `REST v1 PUT returned ${(err as OpenXEApiError).httpCode}`,
-                  data: legacyResult.data ?? legacyResult,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
+        // No Legacy fallback: REST errors are returned to the caller unchanged.
+        throw err;
       }
     }
 
     case "openxe-create-delivery-address": {
+      // REST v1 only. No Legacy fallback: errors are returned to the caller unchanged.
       const input = DeliveryAddressCreateInput.parse(args);
-      try {
-        // Try REST v1 first
-        const result = await client.post("/v1/lieferadressen", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result.data, null, 2),
-            },
-          ],
-        };
-      } catch (e) {
-        // Fallback to Legacy API (REST v1 has PHP 8.1 Fatal Error on DeliveryAddressResource)
-        const result = await client.legacyPost("LieferadresseCreate", input);
-        const data =
-          typeof result.data === "object" && result.data !== null
-            ? result.data
-            : {};
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                { ...data, _method: "legacy-fallback" },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
+      const result = await client.post("/v1/lieferadressen", input);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result.data, null, 2),
+          },
+        ],
+      };
     }
 
     case "openxe-edit-delivery-address": {

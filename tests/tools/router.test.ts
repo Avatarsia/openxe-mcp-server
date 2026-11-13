@@ -283,8 +283,8 @@ describe("Router Tools", () => {
     });
 
     it("dispatches create-address to address handler", async () => {
-      mockClient.legacyPost.mockResolvedValue({
-        data: { id: 5, kundennummer: "10099" },
+      mockClient.post.mockResolvedValue({
+        data: { data: { id: 5, kundennummer: "10099" } },
       });
 
       const result = await handleRouter(
@@ -296,8 +296,8 @@ describe("Router Tools", () => {
       );
 
       expect(result.isError).toBeUndefined();
-      expect(mockClient.legacyPost).toHaveBeenCalledWith(
-        "AdresseCreate",
+      expect(mockClient.post).toHaveBeenCalledWith(
+        "/v1/adressen",
         expect.objectContaining({ name: "Neuer Kunde" })
       );
     });
