@@ -745,7 +745,7 @@ describe("openxe-update-article rename (neue_nummer)", () => {
   it("finds the article by old nummer in the URL and writes the new nummer", async () => {
     await handleArticleTool(
       "openxe-update-article",
-      { nummer: "1F000P", neue_nummer: " 1F000 ", confirm: true },
+      { nummer: "1F000P", neue_nummer: " 1F000 ", patched_api_rename: true, confirm: true },
       client()
     );
     expect(mockClient.legacyPost).toHaveBeenCalledWith(
@@ -755,13 +755,32 @@ describe("openxe-update-article rename (neue_nummer)", () => {
     );
   });
 
+  it("refuses neue_nummer without patched_api_rename, before any call", async () => {
+    await expect(
+      handleArticleTool("openxe-update-article", { nummer: "1F000P", neue_nummer: "1F000", confirm: true }, client())
+    ).rejects.toBeInstanceOf(ZodError);
+    expect(mockClient.legacyPost).not.toHaveBeenCalled();
+  });
+
+  it("refuses a rename to the same number", () => {
+    expect(() =>
+      ArticleUpdateInput.parse({ nummer: "1F000", neue_nummer: "1F000", patched_api_rename: true })
+    ).toThrow();
+  });
+
+  it("patched_api_rename alone is not a change", () => {
+    expect(() => ArticleUpdateInput.parse({ nummer: "1F000", patched_api_rename: true })).toThrow();
+  });
+
   it("without neue_nummer keeps the plain body and no URL lookup", async () => {
     await handleArticleTool("openxe-update-article", { nummer: "1F000", name_de: "X", confirm: true }, client());
     expect(mockClient.legacyPost).toHaveBeenCalledWith("ArtikelEdit", expect.objectContaining({ nummer: "1F000" }));
   });
 
   it("neue_nummer alone counts as a field to change", () => {
-    expect(() => ArticleUpdateInput.parse({ nummer: "1F000", neue_nummer: "1F001" })).not.toThrow();
+    expect(() =>
+      ArticleUpdateInput.parse({ nummer: "1F000", neue_nummer: "1F001", patched_api_rename: true })
+    ).not.toThrow();
   });
 });
 

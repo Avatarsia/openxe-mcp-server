@@ -256,12 +256,31 @@ const ArticleUpdateBase = z.object({
   verkaufspreise: SalesPricesInput.optional().describe(
     "Sales prices to keep on the article. Send them with every write, because OpenXE expires sales prices that are not sent in the same call."
   ),
+  // Acknowledgement flag: the rename only works on the patched test install. Without it, neue_nummer is refused.
+  patched_api_rename: z
+    .boolean()
+    .optional()
+    .describe("Must be true together with neue_nummer. Confirms the target OpenXE has the patched api.php (test install). Stock OpenXE and production would edit the wrong article."),
 });
 
-export const ArticleUpdateInput = ArticleUpdateBase.refine(
-  (a) => Object.entries(a).some(([k, v]) => k !== "nummer" && v !== undefined),
-  { message: "openxe-update-article needs at least one field to change besides nummer" }
-);
+export const ArticleUpdateInput = ArticleUpdateBase.superRefine((a, ctx) => {
+  const changes = Object.entries(a).some(([k, v]) => k !== "nummer" && k !== "patched_api_rename" && v !== undefined);
+  if (!changes) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "openxe-update-article needs at least one field to change besides nummer" });
+  }
+  if (a.neue_nummer !== undefined) {
+    if (a.patched_api_rename !== true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["patched_api_rename"],
+        message: "neue_nummer needs patched_api_rename: true. The rename only works on the patched test install; elsewhere it edits the article that already has the new number.",
+      });
+    }
+    if (a.neue_nummer.trim() === a.nummer.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["neue_nummer"], message: "neue_nummer must differ from nummer" });
+    }
+  }
+});
 
 /**
  * The standalone tool has no article name to fall back on, so the supplier's
@@ -315,7 +334,7 @@ export const ARTICLE_TOOL_DEFINITIONS: ToolDefinition[] = [
     description:
       "Change fields of an existing article, identified by nummer. Uses the Legacy API action ArtikelEdit (REST v1 has no article PUT in OpenXE 1.13). " +
       "Only the fields you pass are changed; at least one field besides nummer is required. The server looks up nummer without excluding deleted articles, so make sure the article is live before changing it. Empty strings are rejected (they would clear the stored value). " +
-      "neue_nummer renames the article: it is found by nummer (sent as URL parameter) and the new number is written from the body. This rename depends on the patched api.php of the test install only; stock OpenXE and production do not support it. " +
+      "neue_nummer renames the article: it is found by nummer (sent as URL parameter) and the new number is written from the body. It is refused unless patched_api_rename: true is also sent, because this rename depends on the patched api.php of the test install only; stock OpenXE and production would edit the article that already has the new number. " +
       "Side effect: the OpenXE call also expires the article's sales prices (Verkaufspreise) that are not sent in the same call, even when you change only text fields. " +
       "Text must not contain ' \" \\ or control characters (OpenXE does not escape them); rephrase, or use a typographic apostrophe (U+2019), which changes the stored text. " +
       "Without confirm: true the call only returns a dry-run preview and writes nothing. " +
@@ -327,7 +346,7 @@ export const ARTICLE_TOOL_DEFINITIONS: ToolDefinition[] = [
         })
       ) as Record<string, unknown>),
       anyOf: Object.keys(ArticleUpdateBase.shape)
-        .filter((k) => k !== "nummer")
+        .filter((k) => k !== "nummer" && k !== "patched_api_rename")
         .map((k) => ({ required: [k] })),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
